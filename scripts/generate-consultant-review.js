@@ -378,7 +378,6 @@ async function evaluateConsultant(urlPath, html, swiftype, bookingContext) {
   const overallPass =
     photoPass &&
     clinicalTermsPass &&
-    plainScore >= 3 &&
     specialtyPass &&
     proceduresPass &&
     insurersPass &&
