@@ -35,7 +35,7 @@ const CLINICAL_TERMS = [
 ];
 
 const ORTHO_WAITS_EXCLUDED_HOSPITALS = new Set([
-  "Cardiff and Vale Hospitals",
+  "Cardiff Bay Hospital",
   "Manchester Diagnostic Suite",
   "Manchester Institute of Health &amp; Performance (MIHP)",
   "Tees Hospital NHS treatments",
@@ -967,6 +967,16 @@ function pickBestWait(records) {
   return candidates.length > 0 ? candidates[0] : null;
 }
 
+function sumAppointmentsNext4Weeks(records) {
+  return records.reduce((sum, r) => {
+    if (!r || !r.booking) return sum;
+    if (!r.booking.bookable) return sum;
+    const n = Number(r.booking.appointmentsNext4Weeks);
+    if (!Number.isFinite(n) || n <= 0) return sum;
+    return sum + n;
+  }, 0);
+}
+
 function buildHospitalWaitRows(records) {
   const hospitalSet = new Set();
   for (const r of records) {
@@ -991,6 +1001,11 @@ function buildHospitalWaitRows(records) {
       orthoAny: pickBestWait(orthoRecords),
       hip: pickBestWait(hipRecords),
       knee: pickBestWait(kneeRecords),
+      totals: {
+        orthoAny: sumAppointmentsNext4Weeks(orthoRecords),
+        hip: sumAppointmentsNext4Weeks(hipRecords),
+        knee: sumAppointmentsNext4Weeks(kneeRecords),
+      },
     };
   });
 
@@ -1020,6 +1035,9 @@ function renderOrthopaedicsWaitHtml(payload) {
         <td>${waitCellHtml(row.orthoAny)}</td>
         <td>${waitCellHtml(row.hip)}</td>
         <td>${waitCellHtml(row.knee)}</td>
+        <td>${escHtml(String(row.totals.orthoAny))}</td>
+        <td>${escHtml(String(row.totals.hip))}</td>
+        <td>${escHtml(String(row.totals.knee))}</td>
       </tr>`
     )
     .join("");
@@ -1061,7 +1079,7 @@ function renderOrthopaedicsWaitHtml(payload) {
       border-radius: 12px;
       overflow: auto;
     }
-    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    table { width: 100%; border-collapse: collapse; min-width: 1180px; }
     th, td { border-bottom: 1px solid #edf3f0; padding: 12px; text-align: left; vertical-align: top; }
     th {
       background: var(--bg);
@@ -1093,6 +1111,9 @@ function renderOrthopaedicsWaitHtml(payload) {
             <th>Shortest Wait: Orthopaedics (Any)</th>
             <th>Shortest Wait: Hip Replacement</th>
             <th>Shortest Wait: Knee Replacement</th>
+            <th>Total Appointments (4w): Orthopaedics</th>
+            <th>Total Appointments (4w): Hip Replacement</th>
+            <th>Total Appointments (4w): Knee Replacement</th>
           </tr>
         </thead>
         <tbody>
