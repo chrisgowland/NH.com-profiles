@@ -36,10 +36,8 @@ const CLINICAL_TERMS = [
 
 const ORTHO_WAITS_EXCLUDED_HOSPITALS = new Set([
   "Cardiff and Vale Hospitals",
-  "Cardiff Bay Hospital",
   "Manchester Diagnostic Suite",
   "Manchester Institute of Health &amp; Performance (MIHP)",
-  "Tees Hospital",
   "Tees Hospital NHS treatments",
 ]);
 
