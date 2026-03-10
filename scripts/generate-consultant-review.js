@@ -6,6 +6,8 @@ const path = require("path");
 const https = require("https");
 
 const BASE_URL = "https://www.nuffieldhealth.com";
+const BOOKING_MICROSITE_URL = "https://nh-booking-microsite.nuffieldhealth.com";
+const BOOKING_APIM_BASE_URL = "https://api.nuffieldhealth.com/booking/consultant/";
 const LIST_PATH = "/consultants?size=n_5_n&sort-field=availabilityRank&sort-direction=availabilityRank";
 const MAX_PAGES = 500;
 const PROFILE_CONCURRENCY = 12;
@@ -36,7 +38,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function fetchText(url, retries = 3) {
+function fetchText(url, retries = 3, headers = {}) {
   return new Promise((resolve, reject) => {
     const attempt = (remaining) => {
       https
@@ -46,6 +48,7 @@ function fetchText(url, retries = 3) {
             headers: {
               "user-agent": "Mozilla/5.0 (compatible; NH-Consultant-Review/1.0)",
               accept: "text/html",
+              ...headers,
             },
           },
           (res) => {
@@ -80,6 +83,24 @@ function fetchText(url, retries = 3) {
   });
 }
 
+async function fetchJson(url, retries = 3, headers = {}) {
+  const raw = await fetchText(url, retries, headers);
+  return JSON.parse(raw);
+}
+
+function formatDateUTC(date) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function daysBetweenUTC(startDateYmd, endDateYmd) {
+  const start = new Date(`${startDateYmd}T00:00:00Z`);
+  const end = new Date(`${endDateYmd}T00:00:00Z`);
+  return Math.round((end.getTime() - start.getTime()) / 86400000);
+}
+
 function decodeEntities(text) {
   return text
     .replace(/&nbsp;/g, " ")
@@ -103,10 +124,10 @@ function stripTags(html) {
 
 function parseAttributes(tag) {
   const attrs = {};
-  const re = /([:@a-zA-Z0-9_-]+)\s*=\s*"([^"]*)"/g;
+  const re = /([:@a-zA-Z0-9_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
   let m;
   while ((m = re.exec(tag)) !== null) {
-    attrs[m[1]] = m[2];
+    attrs[m[1]] = m[2] != null ? m[2] : m[3];
   }
   return attrs;
 }
@@ -201,6 +222,65 @@ function parseImageOriginalUrl(imageMeta) {
   }
 }
 
+function parseHospitalIds(hospitalMetaValues) {
+  if (!Array.isArray(hospitalMetaValues)) return [];
+  const ids = [];
+  for (const val of hospitalMetaValues) {
+    if (!val || typeof val !== "string") continue;
+    try {
+      const parsed = JSON.parse(val);
+      const id = parsed && parsed.id ? String(parsed.id).trim() : "";
+      if (id) ids.push(id);
+    } catch (_) {
+      // Ignore malformed hospital metadata entries.
+    }
+  }
+  return ids;
+}
+
+async function discoverApimSubscriptionKey() {
+  const micrositeHtml = await fetchText(BOOKING_MICROSITE_URL);
+  const scriptMatch = micrositeHtml.match(/<script[^>]+src="([^"]*\/static\/js\/main\.[^"]+\.js)"/i);
+  if (!scriptMatch) return null;
+  const scriptUrl = scriptMatch[1].startsWith("http")
+    ? scriptMatch[1]
+    : `${BOOKING_MICROSITE_URL}${scriptMatch[1]}`;
+  const bundle = await fetchText(scriptUrl, 2);
+  const keyMatch = bundle.match(/APIM_SUBSCRIPTION_KEY:"([a-z0-9]+)"/i);
+  return keyMatch ? keyMatch[1] : null;
+}
+
+async function fetchBookingMetrics(gmcCode, hospitalId, fromDateYmd, apimKey) {
+  if (!gmcCode || !hospitalId || !apimKey) return null;
+  const query =
+    `1.0/slots?uid=${encodeURIComponent(Date.now().toString(36))}` +
+    `&fromDate=${encodeURIComponent(fromDateYmd)}` +
+    `&gmcCode=${encodeURIComponent(gmcCode)}` +
+    `&hospitalId=${encodeURIComponent(hospitalId)}` +
+    `&sessionDays=28`;
+  const url = `${BOOKING_APIM_BASE_URL}${query}`;
+  const payload = await fetchJson(url, 2, {
+    accept: "application/json",
+    "content-type": "application/json",
+    "ocp-apim-subscription-key": apimKey,
+    "x-transaction-id": `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  });
+
+  const details =
+    payload &&
+    payload.response &&
+    payload.response.responseData &&
+    Array.isArray(payload.response.responseData.bookingDetails)
+      ? payload.response.responseData.bookingDetails
+      : [];
+
+  const firstDate = details.length > 0 && details[0].slotDate ? String(details[0].slotDate) : null;
+  return {
+    appointmentsNext4Weeks: details.length,
+    firstAvailableDaysAway: firstDate ? daysBetweenUTC(fromDateYmd, firstDate) : null,
+  };
+}
+
 function boolBadge(value) {
   return value
     ? '<span class="badge badge-pass">Pass</span>'
@@ -251,7 +331,7 @@ async function discoverConsultantLinks() {
   return [...all].sort();
 }
 
-function evaluateConsultant(urlPath, html, swiftype) {
+async function evaluateConsultant(urlPath, html, swiftype, bookingContext) {
   const name = (swiftype.fullname && swiftype.fullname[0]) || "";
   const specialties = swiftype.specialties || [];
   const treatments = swiftype.treatments || [];
@@ -266,6 +346,8 @@ function evaluateConsultant(urlPath, html, swiftype) {
     (swiftype.daysUntilNextAppointment && swiftype.daysUntilNextAppointment[0]) || "";
   const upcomingAppointments = Number.parseInt(upcomingAppointmentsRaw, 10);
   const daysUntilNextAppointment = Number.parseInt(daysUntilNextAppointmentRaw, 10);
+  const gmcCode = gmc.trim();
+  const hospitalIds = parseHospitalIds(swiftype.hospitals || []);
   const imageMeta = (swiftype.image && swiftype.image[0]) || "";
   const sourceImage = parseImageOriginalUrl(imageMeta);
   const aboutText = extractAboutText(html);
@@ -304,6 +386,35 @@ function evaluateConsultant(urlPath, html, swiftype) {
     gmcPass &&
     bookOnlinePass;
 
+  let liveBooking = null;
+  if (bookingContext && bookingContext.apimKey && gmcCode && hospitalIds.length > 0) {
+    try {
+      liveBooking = await fetchBookingMetrics(
+        gmcCode,
+        hospitalIds[0],
+        bookingContext.fromDateYmd,
+        bookingContext.apimKey
+      );
+    } catch (_) {
+      liveBooking = null;
+    }
+  }
+
+  const resolvedAppointmentsNext4Weeks =
+    liveBooking && liveBooking.appointmentsNext4Weeks != null
+      ? liveBooking.appointmentsNext4Weeks
+      : Number.isNaN(upcomingAppointments)
+        ? null
+        : upcomingAppointments;
+  const resolvedFirstAvailableDaysAway =
+    liveBooking && liveBooking.firstAvailableDaysAway != null
+      ? liveBooking.firstAvailableDaysAway
+      : Number.isNaN(daysUntilNextAppointment)
+        ? null
+        : daysUntilNextAppointment;
+  const normalizedFirstAvailableDaysAway =
+    resolvedFirstAvailableDaysAway == null ? null : Math.max(0, resolvedFirstAvailableDaysAway);
+
   return {
     name,
     url: `${BASE_URL}${urlPath}`,
@@ -327,8 +438,8 @@ function evaluateConsultant(urlPath, html, swiftype) {
     },
     booking: {
       bookable: bookableMeta || bookOnlinePass,
-      appointmentsNext4Weeks: Number.isNaN(upcomingAppointments) ? null : upcomingAppointments,
-      firstAvailableDaysAway: Number.isNaN(daysUntilNextAppointment) ? null : daysUntilNextAppointment,
+      appointmentsNext4Weeks: resolvedAppointmentsNext4Weeks,
+      firstAvailableDaysAway: normalizedFirstAvailableDaysAway,
     },
     overallPass,
     fixes,
@@ -812,6 +923,21 @@ function renderHtml(payload) {
 }
 
 async function main() {
+  const bookingFromDateYmd = formatDateUTC(new Date());
+  let apimKey = process.env.NH_APIM_SUBSCRIPTION_KEY || null;
+  if (!apimKey) {
+    try {
+      apimKey = await discoverApimSubscriptionKey();
+      if (apimKey) {
+        console.log("Discovered booking APIM key from booking microsite bundle.");
+      } else {
+        console.log("Booking APIM key not found. Falling back to profile metadata for booking fields.");
+      }
+    } catch (_) {
+      console.log("Could not discover booking APIM key. Falling back to profile metadata for booking fields.");
+    }
+  }
+
   console.log("Discovering consultant profile links...");
   const links = await discoverConsultantLinks();
   console.log(`Found ${links.length} consultant profile URLs.`);
@@ -824,7 +950,10 @@ async function main() {
     try {
       const html = await fetchText(`${BASE_URL}${link}`);
       const swiftype = extractSwiftype(html);
-      return evaluateConsultant(link, html, swiftype);
+      return evaluateConsultant(link, html, swiftype, {
+        apimKey,
+        fromDateYmd: bookingFromDateYmd,
+      });
     } catch (err) {
       return {
         name: link,
