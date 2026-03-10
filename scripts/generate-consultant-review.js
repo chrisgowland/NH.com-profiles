@@ -996,10 +996,26 @@ function buildHospitalWaitRows(records) {
     const hipRecords = orthoRecords.filter((r) => consultantHasTreatment(r, hipPattern));
     const kneeRecords = orthoRecords.filter((r) => consultantHasTreatment(r, kneePattern));
     const orthoConsultantCount = new Set(orthoRecords.map((r) => r.url).filter(Boolean)).size;
+    const consultants = orthoRecords
+      .map((r) => {
+        const n = Number(r && r.booking ? r.booking.appointmentsNext4Weeks : null);
+        return {
+          name: r.name || "",
+          url: r.url || "",
+          appointmentsNext4Weeks: Number.isFinite(n) ? n : null,
+        };
+      })
+      .sort((a, b) => {
+        const aCount = a.appointmentsNext4Weeks == null ? -1 : a.appointmentsNext4Weeks;
+        const bCount = b.appointmentsNext4Weeks == null ? -1 : b.appointmentsNext4Weeks;
+        if (aCount !== bCount) return bCount - aCount;
+        return a.name.localeCompare(b.name);
+      });
 
     return {
       hospital,
       orthoConsultantCount,
+      consultants,
       orthoAny: pickBestWait(orthoRecords),
       hip: pickBestWait(hipRecords),
       knee: pickBestWait(kneeRecords),
@@ -1034,14 +1050,47 @@ function avgAppointmentsCell(totalAppointments, consultantCount) {
   return `${escHtml(avg.toFixed(1))} <span class="muted">(${escHtml(String(totalAppointments))}/${escHtml(String(consultantCount))})</span>`;
 }
 
+function consultantAppointmentsCell(consultant) {
+  if (!consultant) return '<span class="muted">N/A</span>';
+  if (consultant.appointmentsNext4Weeks == null) return '<span class="muted">N/A</span>';
+  return escHtml(String(consultant.appointmentsNext4Weeks));
+}
+
+function consultantListHtml(row) {
+  if (!row.consultants || row.consultants.length === 0) {
+    return '<div class="muted">No orthopaedic consultants found for this site.</div>';
+  }
+  const items = row.consultants
+    .map(
+      (c) => `<tr>
+        <td><a href="${escHtml(c.url)}" target="_blank" rel="noopener">${escHtml(c.name || c.url || "Consultant")}</a></td>
+        <td>${consultantAppointmentsCell(c)}</td>
+      </tr>`
+    )
+    .join("");
+  return `<table class="detail-table">
+    <thead>
+      <tr>
+        <th>Orthopaedic Consultant</th>
+        <th>Appointments (Next 4 Weeks)</th>
+      </tr>
+    </thead>
+    <tbody>${items}</tbody>
+  </table>`;
+}
+
 function renderOrthopaedicsWaitHtml(payload) {
   const rows = buildHospitalWaitRows(payload.records);
   const generatedAt = payload.summary.generatedAt;
 
   const tableRows = rows
     .map(
-      (row) => `<tr>
-        <td>${escHtml(row.hospital)}</td>
+      (row, idx) => `<tr class="hospital-row" data-detail-id="detail-${idx}">
+        <td>
+          <button type="button" class="hospital-btn" aria-expanded="false" aria-controls="detail-${idx}">
+            ${escHtml(row.hospital)}
+          </button>
+        </td>
         <td>${escHtml(String(row.orthoConsultantCount))}</td>
         <td>${waitCellHtml(row.orthoAny)}</td>
         <td>${waitCellHtml(row.hip)}</td>
@@ -1050,6 +1099,11 @@ function renderOrthopaedicsWaitHtml(payload) {
         <td>${escHtml(String(row.totals.hip))}</td>
         <td>${escHtml(String(row.totals.knee))}</td>
         <td>${avgAppointmentsCell(row.totals.orthoAny, row.orthoConsultantCount)}</td>
+      </tr>
+      <tr id="detail-${idx}" class="detail-row" hidden>
+        <td colspan="9">
+          ${consultantListHtml(row)}
+        </td>
       </tr>`
     )
     .join("");
@@ -1106,6 +1160,32 @@ function renderOrthopaedicsWaitHtml(payload) {
     .small a { color: var(--green); text-decoration: none; font-weight: 600; }
     .muted { color: #5f7a70; }
     .note { margin-top: 10px; font-size: 0.83rem; color: #49635a; }
+    .hospital-btn {
+      all: unset;
+      color: #0f6f57;
+      cursor: pointer;
+      font-weight: 700;
+      text-decoration: underline;
+    }
+    .hospital-row:hover { background: #f8fcfa; }
+    .detail-row td {
+      background: #fbfefd;
+      border-top: 0;
+      border-bottom: 1px solid #e3efea;
+      padding-top: 6px;
+      padding-bottom: 14px;
+    }
+    .detail-table { width: 100%; border-collapse: collapse; min-width: 0; }
+    .detail-table th, .detail-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #edf3f0;
+      font-size: 0.85rem;
+      text-align: left;
+    }
+    .detail-table th {
+      background: #eef7f3;
+      position: static;
+    }
   </style>
 </head>
 <body>
@@ -1135,8 +1215,25 @@ function renderOrthopaedicsWaitHtml(payload) {
         </tbody>
       </table>
     </section>
+    <p class="note">Click a site name to view orthopaedic consultants and their appointments in the next 4 weeks.</p>
     <p class="note">Wait values use each consultant&apos;s first online-bookable appointment in days.</p>
   </div>
+  <script>
+    (function () {
+      const rows = document.querySelectorAll(".hospital-row");
+      rows.forEach((row) => {
+        const detailId = row.getAttribute("data-detail-id");
+        const detail = detailId ? document.getElementById(detailId) : null;
+        const btn = row.querySelector(".hospital-btn");
+        if (!detail || !btn) return;
+        btn.addEventListener("click", () => {
+          const willOpen = detail.hidden;
+          detail.hidden = !willOpen;
+          btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+        });
+      });
+    })();
+  </script>
 </body>
 </html>`;
 }
