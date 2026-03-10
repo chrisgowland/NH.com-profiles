@@ -537,7 +537,7 @@ function renderHtml(payload) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nuffield Health Consultant Profile Review</title>
+  <title>Nuffield Health Profile Reviews</title>
   <style>
     :root {
       --nh-green: #0f6f57;
@@ -694,7 +694,7 @@ function renderHtml(payload) {
 <body>
   <div class="wrap">
     <section class="hero">
-      <h1>Nuffield Health Consultant Profile Review</h1>
+      <h1>Nuffield Health Profile Reviews</h1>
       <p>Scope: all consultants on Nuffield Health profile listings, excluding radiology and anaesthetics profiles.</p>
       <p class="muted">Generated: ${escHtml(payload.summary.generatedAt)}</p>
     </section>
