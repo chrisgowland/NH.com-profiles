@@ -921,6 +921,180 @@ function renderHtml(payload) {
 </html>`;
 }
 
+function textMatches(value, pattern) {
+  return pattern.test(String(value || ""));
+}
+
+function consultantHasTreatment(record, pattern) {
+  if (!record || !Array.isArray(record.treatments)) return false;
+  return record.treatments.some((t) => textMatches(t, pattern));
+}
+
+function consultantIsOrthopaedics(record) {
+  if (!record || !Array.isArray(record.specialties)) return false;
+  return record.specialties.some((s) => /\borthop(a)?edic\b/i.test(String(s || "")));
+}
+
+function getWaitCandidate(record) {
+  if (!record || !record.booking) return null;
+  if (!record.booking.bookable) return null;
+  if (record.booking.firstAvailableDaysAway == null) return null;
+  return {
+    name: record.name || "",
+    url: record.url || "",
+    waitDays: Number(record.booking.firstAvailableDaysAway),
+  };
+}
+
+function pickBestWait(records) {
+  const candidates = records
+    .map((r) => getWaitCandidate(r))
+    .filter((c) => c && Number.isFinite(c.waitDays))
+    .sort((a, b) => {
+      if (a.waitDays !== b.waitDays) return a.waitDays - b.waitDays;
+      return a.name.localeCompare(b.name);
+    });
+  return candidates.length > 0 ? candidates[0] : null;
+}
+
+function buildHospitalWaitRows(records) {
+  const hospitalSet = new Set();
+  for (const r of records) {
+    for (const h of r.hospitals || []) {
+      if (h && String(h).trim()) hospitalSet.add(String(h).trim());
+    }
+  }
+
+  const hospitals = [...hospitalSet].sort((a, b) => a.localeCompare(b));
+  const hipPattern = /\bhip replacement\b/i;
+  const kneePattern = /\bknee replacement\b/i;
+
+  const rows = hospitals.map((hospital) => {
+    const inHospital = records.filter((r) => (r.hospitals || []).includes(hospital));
+    const orthoRecords = inHospital.filter((r) => consultantIsOrthopaedics(r));
+    const hipRecords = orthoRecords.filter((r) => consultantHasTreatment(r, hipPattern));
+    const kneeRecords = orthoRecords.filter((r) => consultantHasTreatment(r, kneePattern));
+
+    return {
+      hospital,
+      orthoAny: pickBestWait(orthoRecords),
+      hip: pickBestWait(hipRecords),
+      knee: pickBestWait(kneeRecords),
+    };
+  });
+
+  rows.sort((a, b) => {
+    const aWait = a.orthoAny ? a.orthoAny.waitDays : Number.POSITIVE_INFINITY;
+    const bWait = b.orthoAny ? b.orthoAny.waitDays : Number.POSITIVE_INFINITY;
+    if (aWait !== bWait) return aWait - bWait;
+    return a.hospital.localeCompare(b.hospital);
+  });
+
+  return rows;
+}
+
+function waitCellHtml(wait) {
+  if (!wait) return '<span class="muted">N/A</span>';
+  return `${wait.waitDays} day(s)<div class="small"><a href="${escHtml(wait.url)}" target="_blank" rel="noopener">${escHtml(wait.name || "Consultant")}</a></div>`;
+}
+
+function renderOrthopaedicsWaitHtml(payload) {
+  const rows = buildHospitalWaitRows(payload.records);
+  const generatedAt = payload.summary.generatedAt;
+
+  const tableRows = rows
+    .map(
+      (row) => `<tr>
+        <td>${escHtml(row.hospital)}</td>
+        <td>${waitCellHtml(row.orthoAny)}</td>
+        <td>${waitCellHtml(row.hip)}</td>
+        <td>${waitCellHtml(row.knee)}</td>
+      </tr>`
+    )
+    .join("");
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nuffield Orthopaedics Waits by Hospital</title>
+  <style>
+    :root {
+      --ink: #1a2f2a;
+      --green: #0f6f57;
+      --line: #d7e5df;
+      --bg: #f5faf8;
+      --card: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Poppins", "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(160deg, #f7fbf9 0%, #e8f5ef 100%);
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .hero {
+      background: linear-gradient(135deg, #0a4f3e, var(--green));
+      color: #fff;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .hero h1 { margin: 0 0 8px 0; font-size: 1.6rem; }
+    .hero p { margin: 0; opacity: 0.95; }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: auto;
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    th, td { border-bottom: 1px solid #edf3f0; padding: 12px; text-align: left; vertical-align: top; }
+    th {
+      background: var(--bg);
+      color: #184236;
+      font-size: 0.85rem;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    td { font-size: 0.92rem; }
+    .small { margin-top: 4px; font-size: 0.8rem; }
+    .small a { color: var(--green); text-decoration: none; font-weight: 600; }
+    .muted { color: #5f7a70; }
+    .note { margin-top: 10px; font-size: 0.83rem; color: #49635a; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>Nuffield Orthopaedics Waits by Hospital</h1>
+      <p>Generated: ${escHtml(generatedAt)}</p>
+      <p>Sorted by shortest online-bookable orthopaedics wait (any type), then hospital name.</p>
+    </section>
+    <section class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th>Hospital</th>
+            <th>Shortest Wait: Orthopaedics (Any)</th>
+            <th>Shortest Wait: Hip Replacement</th>
+            <th>Shortest Wait: Knee Replacement</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    </section>
+    <p class="note">Wait values use each consultant&apos;s first online-bookable appointment in days.</p>
+  </div>
+</body>
+</html>`;
+}
+
 async function main() {
   const bookingFromDateYmd = formatDateUTC(new Date());
   let apimKey = process.env.NH_APIM_SUBSCRIPTION_KEY || null;
@@ -1002,6 +1176,7 @@ async function main() {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUTPUT_DIR, "data.json"), JSON.stringify(payload, null, 2), "utf8");
   fs.writeFileSync(path.join(OUTPUT_DIR, "index.html"), renderHtml(payload), "utf8");
+  fs.writeFileSync(path.join(OUTPUT_DIR, "orthopaedics-waits.html"), renderOrthopaedicsWaitHtml(payload), "utf8");
   const bookingCsvHeader = [
     "name",
     "url",
@@ -1034,6 +1209,7 @@ async function main() {
 
   console.log("Done.");
   console.log(`Website: ${path.join(OUTPUT_DIR, "index.html")}`);
+  console.log(`Orthopaedics waits: ${path.join(OUTPUT_DIR, "orthopaedics-waits.html")}`);
   console.log(`Data: ${path.join(OUTPUT_DIR, "data.json")}`);
   console.log(`Included: ${summary.totalIncluded} | Excluded: ${summary.totalExcluded}`);
 }

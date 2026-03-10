@@ -11,6 +11,7 @@ node scripts/generate-consultant-review.js
 ## Output
 
 - `consultant-review/index.html`
+- `consultant-review/orthopaedics-waits.html`
 - `consultant-review/data.json`
 - `consultant-review/booking-report.csv`
 
