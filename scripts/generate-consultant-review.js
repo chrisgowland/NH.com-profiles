@@ -1026,6 +1026,14 @@ function waitCellHtml(wait) {
   return `${wait.waitDays} day(s)<div class="small"><a href="${escHtml(wait.url)}" target="_blank" rel="noopener">${escHtml(wait.name || "Consultant")}</a></div>`;
 }
 
+function avgAppointmentsCell(totalAppointments, consultantCount) {
+  if (!Number.isFinite(totalAppointments) || !Number.isFinite(consultantCount) || consultantCount <= 0) {
+    return '<span class="muted">N/A</span>';
+  }
+  const avg = totalAppointments / consultantCount;
+  return `${escHtml(avg.toFixed(1))} <span class="muted">(${escHtml(String(totalAppointments))}/${escHtml(String(consultantCount))})</span>`;
+}
+
 function renderOrthopaedicsWaitHtml(payload) {
   const rows = buildHospitalWaitRows(payload.records);
   const generatedAt = payload.summary.generatedAt;
@@ -1041,6 +1049,7 @@ function renderOrthopaedicsWaitHtml(payload) {
         <td>${escHtml(String(row.totals.orthoAny))}</td>
         <td>${escHtml(String(row.totals.hip))}</td>
         <td>${escHtml(String(row.totals.knee))}</td>
+        <td>${avgAppointmentsCell(row.totals.orthoAny, row.orthoConsultantCount)}</td>
       </tr>`
     )
     .join("");
@@ -1082,7 +1091,7 @@ function renderOrthopaedicsWaitHtml(payload) {
       border-radius: 12px;
       overflow: auto;
     }
-    table { width: 100%; border-collapse: collapse; min-width: 1280px; }
+    table { width: 100%; border-collapse: collapse; min-width: 1460px; }
     th, td { border-bottom: 1px solid #edf3f0; padding: 12px; text-align: left; vertical-align: top; }
     th {
       background: var(--bg);
@@ -1118,6 +1127,7 @@ function renderOrthopaedicsWaitHtml(payload) {
             <th>Total Appointments (4w): Orthopaedics</th>
             <th>Total Appointments (4w): Hip Replacement</th>
             <th>Total Appointments (4w): Knee Replacement</th>
+            <th>Avg Orthopaedic Appointments per Consultant (4w)</th>
           </tr>
         </thead>
         <tbody>
