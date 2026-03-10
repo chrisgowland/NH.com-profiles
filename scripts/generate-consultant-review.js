@@ -34,6 +34,15 @@ const CLINICAL_TERMS = [
   "orthopedic",
 ];
 
+const ORTHO_WAITS_EXCLUDED_HOSPITALS = new Set([
+  "Cardiff and Vale Hospitals",
+  "Cardiff Bay Hospital",
+  "Manchester Diagnostic Suite",
+  "Manchester Institute of Health &amp; Performance (MIHP)",
+  "Tees Hospital",
+  "Tees Hospital NHS treatments",
+]);
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -969,10 +978,11 @@ function buildHospitalWaitRows(records) {
   }
 
   const hospitals = [...hospitalSet].sort((a, b) => a.localeCompare(b));
+  const filteredHospitals = hospitals.filter((h) => !ORTHO_WAITS_EXCLUDED_HOSPITALS.has(h));
   const hipPattern = /\bhip replacement\b/i;
   const kneePattern = /\bknee replacement\b/i;
 
-  const rows = hospitals.map((hospital) => {
+  const rows = filteredHospitals.map((hospital) => {
     const inHospital = records.filter((r) => (r.hospitals || []).includes(hospital));
     const orthoRecords = inHospital.filter((r) => consultantIsOrthopaedics(r));
     const hipRecords = orthoRecords.filter((r) => consultantHasTreatment(r, hipPattern));
