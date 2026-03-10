@@ -995,9 +995,11 @@ function buildHospitalWaitRows(records) {
     const orthoRecords = inHospital.filter((r) => consultantIsOrthopaedics(r));
     const hipRecords = orthoRecords.filter((r) => consultantHasTreatment(r, hipPattern));
     const kneeRecords = orthoRecords.filter((r) => consultantHasTreatment(r, kneePattern));
+    const orthoConsultantCount = new Set(orthoRecords.map((r) => r.url).filter(Boolean)).size;
 
     return {
       hospital,
+      orthoConsultantCount,
       orthoAny: pickBestWait(orthoRecords),
       hip: pickBestWait(hipRecords),
       knee: pickBestWait(kneeRecords),
@@ -1032,6 +1034,7 @@ function renderOrthopaedicsWaitHtml(payload) {
     .map(
       (row) => `<tr>
         <td>${escHtml(row.hospital)}</td>
+        <td>${escHtml(String(row.orthoConsultantCount))}</td>
         <td>${waitCellHtml(row.orthoAny)}</td>
         <td>${waitCellHtml(row.hip)}</td>
         <td>${waitCellHtml(row.knee)}</td>
@@ -1079,7 +1082,7 @@ function renderOrthopaedicsWaitHtml(payload) {
       border-radius: 12px;
       overflow: auto;
     }
-    table { width: 100%; border-collapse: collapse; min-width: 1180px; }
+    table { width: 100%; border-collapse: collapse; min-width: 1280px; }
     th, td { border-bottom: 1px solid #edf3f0; padding: 12px; text-align: left; vertical-align: top; }
     th {
       background: var(--bg);
@@ -1108,6 +1111,7 @@ function renderOrthopaedicsWaitHtml(payload) {
         <thead>
           <tr>
             <th>Hospital</th>
+            <th>Total Orthopaedic Consultants</th>
             <th>Shortest Wait: Orthopaedics (Any)</th>
             <th>Shortest Wait: Hip Replacement</th>
             <th>Shortest Wait: Knee Replacement</th>
