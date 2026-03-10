@@ -11,6 +11,7 @@ const BOOKING_APIM_BASE_URL = "https://api.nuffieldhealth.com/booking/consultant
 const LIST_PATH = "/consultants?size=n_5_n&sort-field=availabilityRank&sort-direction=availabilityRank";
 const MAX_PAGES = 500;
 const PROFILE_CONCURRENCY = 12;
+const BOOKING_API_CONCURRENCY = 2;
 const OUTPUT_DIR = path.resolve(process.cwd(), "consultant-review");
 
 const EXCLUSION_PATTERN = /\b(radiolog(?:y|ist|ical)|anaesthe(?:tics?|tist|sia)|anesthe(?:tics?|tist|sia))\b/i;
@@ -40,6 +41,30 @@ const ORTHO_WAITS_EXCLUDED_HOSPITALS = new Set([
   "Manchester Institute of Health &amp; Performance (MIHP)",
   "Tees Hospital NHS treatments",
 ]);
+
+let bookingApiActive = 0;
+const bookingApiQueue = [];
+
+function withBookingApiLimit(task) {
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      bookingApiActive += 1;
+      Promise.resolve()
+        .then(task)
+        .then(resolve, reject)
+        .finally(() => {
+          bookingApiActive -= 1;
+          if (bookingApiQueue.length > 0) {
+            const next = bookingApiQueue.shift();
+            next();
+          }
+        });
+    };
+
+    if (bookingApiActive < BOOKING_API_CONCURRENCY) run();
+    else bookingApiQueue.push(run);
+  });
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -245,6 +270,23 @@ function parseHospitalIds(hospitalMetaValues) {
   return ids;
 }
 
+function parseHospitalEntries(hospitalMetaValues) {
+  if (!Array.isArray(hospitalMetaValues)) return [];
+  const entries = [];
+  for (const val of hospitalMetaValues) {
+    if (!val || typeof val !== "string") continue;
+    try {
+      const parsed = JSON.parse(val);
+      const id = parsed && parsed.id ? String(parsed.id).trim() : "";
+      const title = parsed && parsed.title ? String(parsed.title).trim() : "";
+      if (id) entries.push({ id, title });
+    } catch (_) {
+      // Ignore malformed hospital metadata entries.
+    }
+  }
+  return entries;
+}
+
 async function discoverApimSubscriptionKey() {
   const micrositeHtml = await fetchText(BOOKING_MICROSITE_URL);
   const scriptMatch = micrositeHtml.match(/<script[^>]+src="([^"]*\/static\/js\/main\.[^"]+\.js)"/i);
@@ -266,7 +308,7 @@ async function fetchBookingMetrics(gmcCode, hospitalId, fromDateYmd, apimKey) {
     `&hospitalId=${encodeURIComponent(hospitalId)}` +
     `&sessionDays=28`;
   const url = `${BOOKING_APIM_BASE_URL}${query}`;
-  const payload = await fetchJson(url, 2, {
+  const payload = await fetchJson(url, 3, {
     accept: "application/json",
     "content-type": "application/json",
     "ocp-apim-subscription-key": apimKey,
@@ -285,6 +327,43 @@ async function fetchBookingMetrics(gmcCode, hospitalId, fromDateYmd, apimKey) {
   return {
     appointmentsNext4Weeks: details.length,
     firstAvailableDaysAway: firstDate ? daysBetweenUTC(fromDateYmd, firstDate) : null,
+  };
+}
+
+async function fetchBookingMetricsAcrossHospitals(gmcCode, hospitalEntries, fromDateYmd, apimKey) {
+  if (!gmcCode || !Array.isArray(hospitalEntries) || hospitalEntries.length === 0 || !apimKey) return null;
+  const unique = [];
+  const seen = new Set();
+  for (const h of hospitalEntries) {
+    if (!h || !h.id || seen.has(h.id)) continue;
+    seen.add(h.id);
+    unique.push(h);
+  }
+
+  const byHospital = {};
+  for (const h of unique) {
+    try {
+      const m = await withBookingApiLimit(() =>
+        fetchBookingMetrics(gmcCode, h.id, fromDateYmd, apimKey)
+      );
+      if (!m) continue;
+      byHospital[h.title || h.id] = m;
+    } catch (_) {
+      // Ignore transient per-hospital failures and continue with remaining hospitals.
+    }
+  }
+
+  const values = Object.values(byHospital).filter((v) => v && Number.isFinite(v.appointmentsNext4Weeks));
+  if (values.length === 0) return null;
+  const appointmentsNext4Weeks = values.reduce((sum, v) => sum + (v.appointmentsNext4Weeks || 0), 0);
+  const firstCandidates = values
+    .map((v) => v.firstAvailableDaysAway)
+    .filter((n) => Number.isFinite(n) && n >= 0);
+  const firstAvailableDaysAway = firstCandidates.length > 0 ? Math.min(...firstCandidates) : null;
+  return {
+    appointmentsNext4Weeks,
+    firstAvailableDaysAway,
+    byHospital,
   };
 }
 
@@ -354,7 +433,8 @@ async function evaluateConsultant(urlPath, html, swiftype, bookingContext) {
   const upcomingAppointments = Number.parseInt(upcomingAppointmentsRaw, 10);
   const daysUntilNextAppointment = Number.parseInt(daysUntilNextAppointmentRaw, 10);
   const gmcCode = gmc.trim();
-  const hospitalIds = parseHospitalIds(swiftype.hospitals || []);
+  const hospitalEntries = parseHospitalEntries(swiftype.hospitals || []);
+  const hospitalIds = hospitalEntries.map((h) => h.id);
   const imageMeta = (swiftype.image && swiftype.image[0]) || "";
   const sourceImage = parseImageOriginalUrl(imageMeta);
   const aboutText = extractAboutText(html);
@@ -393,11 +473,13 @@ async function evaluateConsultant(urlPath, html, swiftype, bookingContext) {
     bookOnlinePass;
 
   let liveBooking = null;
-  if (bookingContext && bookingContext.apimKey && gmcCode && hospitalIds.length > 0) {
+  const attemptedLiveBooking =
+    !!(bookingContext && bookingContext.apimKey && gmcCode && hospitalEntries.length > 0);
+  if (attemptedLiveBooking) {
     try {
-      liveBooking = await fetchBookingMetrics(
+      liveBooking = await fetchBookingMetricsAcrossHospitals(
         gmcCode,
-        hospitalIds[0],
+        hospitalEntries,
         bookingContext.fromDateYmd,
         bookingContext.apimKey
       );
@@ -409,12 +491,16 @@ async function evaluateConsultant(urlPath, html, swiftype, bookingContext) {
   const resolvedAppointmentsNext4Weeks =
     liveBooking && liveBooking.appointmentsNext4Weeks != null
       ? liveBooking.appointmentsNext4Weeks
+      : attemptedLiveBooking
+        ? null
       : Number.isNaN(upcomingAppointments)
         ? null
         : upcomingAppointments;
   const resolvedFirstAvailableDaysAway =
     liveBooking && liveBooking.firstAvailableDaysAway != null
       ? liveBooking.firstAvailableDaysAway
+      : attemptedLiveBooking
+        ? null
       : Number.isNaN(daysUntilNextAppointment)
         ? null
         : daysUntilNextAppointment;
@@ -446,6 +532,7 @@ async function evaluateConsultant(urlPath, html, swiftype, bookingContext) {
       bookable: bookableMeta || bookOnlinePass,
       appointmentsNext4Weeks: resolvedAppointmentsNext4Weeks,
       firstAvailableDaysAway: normalizedFirstAvailableDaysAway,
+      byHospital: liveBooking && liveBooking.byHospital ? liveBooking.byHospital : {},
     },
     overallPass,
     fixes,
@@ -942,23 +1029,37 @@ function consultantIsOrthopaedics(record) {
   return record.specialties.some((s) => /\borthop(a)?edic\b/i.test(String(s || "")));
 }
 
-function getWaitCandidate(record) {
+function getBookingForHospital(record, hospitalName) {
+  if (!record || !record.booking) return null;
+  if (
+    record.booking.byHospital &&
+    hospitalName &&
+    Object.prototype.hasOwnProperty.call(record.booking.byHospital, hospitalName)
+  ) {
+    return record.booking.byHospital[hospitalName];
+  }
+  return record.booking;
+}
+
+function getWaitCandidate(record, hospitalName) {
   if (!record || !record.booking) return null;
   if (!record.booking.bookable) return null;
-  if (record.booking.appointmentsNext4Weeks == null || record.booking.appointmentsNext4Weeks <= 0) return null;
-  if (record.booking.firstAvailableDaysAway == null) return null;
-  if (!Number.isFinite(Number(record.booking.firstAvailableDaysAway))) return null;
-  if (Number(record.booking.firstAvailableDaysAway) < 0) return null;
+  const booking = getBookingForHospital(record, hospitalName);
+  if (!booking) return null;
+  if (booking.appointmentsNext4Weeks == null || booking.appointmentsNext4Weeks <= 0) return null;
+  if (booking.firstAvailableDaysAway == null) return null;
+  if (!Number.isFinite(Number(booking.firstAvailableDaysAway))) return null;
+  if (Number(booking.firstAvailableDaysAway) < 0) return null;
   return {
     name: record.name || "",
     url: record.url || "",
-    waitDays: Number(record.booking.firstAvailableDaysAway),
+    waitDays: Number(booking.firstAvailableDaysAway),
   };
 }
 
-function pickBestWait(records) {
+function pickBestWait(records, hospitalName) {
   const candidates = records
-    .map((r) => getWaitCandidate(r))
+    .map((r) => getWaitCandidate(r, hospitalName))
     .filter((c) => c && Number.isFinite(c.waitDays))
     .sort((a, b) => {
       if (a.waitDays !== b.waitDays) return a.waitDays - b.waitDays;
@@ -967,11 +1068,13 @@ function pickBestWait(records) {
   return candidates.length > 0 ? candidates[0] : null;
 }
 
-function sumAppointmentsNext4Weeks(records) {
+function sumAppointmentsNext4Weeks(records, hospitalName) {
   return records.reduce((sum, r) => {
     if (!r || !r.booking) return sum;
     if (!r.booking.bookable) return sum;
-    const n = Number(r.booking.appointmentsNext4Weeks);
+    const booking = getBookingForHospital(r, hospitalName);
+    if (!booking) return sum;
+    const n = Number(booking.appointmentsNext4Weeks);
     if (!Number.isFinite(n) || n <= 0) return sum;
     return sum + n;
   }, 0);
@@ -998,7 +1101,8 @@ function buildHospitalWaitRows(records) {
     const orthoConsultantCount = new Set(orthoRecords.map((r) => r.url).filter(Boolean)).size;
     const consultants = orthoRecords
       .map((r) => {
-        const n = Number(r && r.booking ? r.booking.appointmentsNext4Weeks : null);
+        const booking = getBookingForHospital(r, hospital);
+        const n = Number(booking ? booking.appointmentsNext4Weeks : null);
         return {
           name: r.name || "",
           url: r.url || "",
@@ -1016,13 +1120,13 @@ function buildHospitalWaitRows(records) {
       hospital,
       orthoConsultantCount,
       consultants,
-      orthoAny: pickBestWait(orthoRecords),
-      hip: pickBestWait(hipRecords),
-      knee: pickBestWait(kneeRecords),
+      orthoAny: pickBestWait(orthoRecords, hospital),
+      hip: pickBestWait(hipRecords, hospital),
+      knee: pickBestWait(kneeRecords, hospital),
       totals: {
-        orthoAny: sumAppointmentsNext4Weeks(orthoRecords),
-        hip: sumAppointmentsNext4Weeks(hipRecords),
-        knee: sumAppointmentsNext4Weeks(kneeRecords),
+        orthoAny: sumAppointmentsNext4Weeks(orthoRecords, hospital),
+        hip: sumAppointmentsNext4Weeks(hipRecords, hospital),
+        knee: sumAppointmentsNext4Weeks(kneeRecords, hospital),
       },
     };
   });
@@ -1299,7 +1403,7 @@ async function main() {
         },
         overallPass: false,
         fixes: [`Profile could not be fully evaluated (${err.message}).`],
-        excluded: false,
+        excluded: true,
       };
     }
   });
