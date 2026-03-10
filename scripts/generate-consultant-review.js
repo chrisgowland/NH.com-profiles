@@ -938,7 +938,10 @@ function consultantIsOrthopaedics(record) {
 function getWaitCandidate(record) {
   if (!record || !record.booking) return null;
   if (!record.booking.bookable) return null;
+  if (record.booking.appointmentsNext4Weeks == null || record.booking.appointmentsNext4Weeks <= 0) return null;
   if (record.booking.firstAvailableDaysAway == null) return null;
+  if (!Number.isFinite(Number(record.booking.firstAvailableDaysAway))) return null;
+  if (Number(record.booking.firstAvailableDaysAway) < 0) return null;
   return {
     name: record.name || "",
     url: record.url || "",
