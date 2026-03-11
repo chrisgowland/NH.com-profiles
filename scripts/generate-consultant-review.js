@@ -1233,7 +1233,7 @@ function renderOrthopaedicsWaitHtml(payload) {
       color: var(--ink);
       background: linear-gradient(160deg, #f7fbf9 0%, #e8f5ef 100%);
     }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .wrap { max-width: 100%; margin: 0 auto; padding: 24px; }
     .hero {
       background: linear-gradient(135deg, #0a4f3e, var(--green));
       color: #fff;
@@ -1249,17 +1249,32 @@ function renderOrthopaedicsWaitHtml(payload) {
       border-radius: 12px;
       overflow: auto;
     }
-    table { width: 100%; border-collapse: collapse; min-width: 1460px; }
-    th, td { border-bottom: 1px solid #edf3f0; padding: 12px; text-align: left; vertical-align: top; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border-bottom: 1px solid #edf3f0; padding: 8px; text-align: left; vertical-align: top; }
     th {
       background: var(--bg);
       color: #184236;
-      font-size: 0.85rem;
+      font-size: 0.78rem;
       position: sticky;
       top: 0;
       z-index: 2;
     }
-    td { font-size: 0.92rem; }
+    td { font-size: 0.8rem; overflow-wrap: anywhere; }
+    .sort-btn {
+      all: unset;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: inherit;
+      width: 100%;
+      font-weight: 600;
+    }
+    .sort-indicator {
+      font-size: 0.75rem;
+      opacity: 0.8;
+      min-width: 12px;
+    }
     .small { margin-top: 4px; font-size: 0.8rem; }
     .small a { color: var(--green); text-decoration: none; font-weight: 600; }
     .muted { color: #5f7a70; }
@@ -1304,14 +1319,14 @@ function renderOrthopaedicsWaitHtml(payload) {
         <thead>
           <tr>
             <th>Hospital</th>
-            <th>Total Orthopaedic Consultants</th>
-            <th>Shortest Wait: Orthopaedics (Any)</th>
-            <th>Shortest Wait: Hip Replacement</th>
-            <th>Shortest Wait: Knee Replacement</th>
-            <th>Total Appointments (4w): Orthopaedics</th>
-            <th>Total Appointments (4w): Hip Replacement</th>
-            <th>Total Appointments (4w): Knee Replacement</th>
-            <th>Avg Orthopaedic Appointments per Consultant (4w)</th>
+            <th><button type="button" class="sort-btn" data-sort-col="1">Total Orthopaedic Consultants<span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-col="2">Shortest Wait: Orthopaedics (Any)<span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-col="3">Shortest Wait: Hip Replacement<span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-col="4">Shortest Wait: Knee Replacement<span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-col="5">Total Appointments (4w): Orthopaedics<span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-col="6">Total Appointments (4w): Hip Replacement<span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-col="7">Total Appointments (4w): Knee Replacement<span class="sort-indicator"></span></button></th>
+            <th><button type="button" class="sort-btn" data-sort-col="8">Avg Orthopaedic Appointments per Consultant (4w)<span class="sort-indicator"></span></button></th>
           </tr>
         </thead>
         <tbody>
@@ -1325,6 +1340,59 @@ function renderOrthopaedicsWaitHtml(payload) {
   <script>
     (function () {
       const rows = document.querySelectorAll(".hospital-row");
+      const sortButtons = document.querySelectorAll(".sort-btn[data-sort-col]");
+      const tbody = document.querySelector(".panel tbody");
+      let currentSortCol = null;
+      let currentSortDir = 1;
+
+      function parseSortValue(row, colIndex) {
+        const cell = row && row.cells ? row.cells[colIndex] : null;
+        if (!cell) return Number.POSITIVE_INFINITY;
+        const text = cell.textContent || "";
+        const numMatch = text.match(/-?\d+(\.\d+)?/);
+        if (numMatch) return Number.parseFloat(numMatch[0]);
+        return Number.POSITIVE_INFINITY;
+      }
+
+      function hospitalName(row) {
+        const btn = row.querySelector(".hospital-btn");
+        return (btn ? btn.textContent : row.cells[0] && row.cells[0].textContent || "").trim().toLowerCase();
+      }
+
+      function sortHospitalRows(colIndex, dir) {
+        const pairs = [...tbody.querySelectorAll("tr.hospital-row")].map((row) => {
+          const detailId = row.getAttribute("data-detail-id");
+          const detailRow = detailId ? document.getElementById(detailId) : null;
+          return { row, detailRow };
+        });
+
+        pairs.sort((a, b) => {
+          const av = parseSortValue(a.row, colIndex);
+          const bv = parseSortValue(b.row, colIndex);
+          if (av === bv) return hospitalName(a.row).localeCompare(hospitalName(b.row));
+          return (av - bv) * dir;
+        });
+
+        const frag = document.createDocumentFragment();
+        pairs.forEach((pair) => {
+          frag.appendChild(pair.row);
+          if (pair.detailRow) frag.appendChild(pair.detailRow);
+        });
+        tbody.appendChild(frag);
+      }
+
+      function updateSortIndicators(activeCol, dir) {
+        sortButtons.forEach((btn) => {
+          const col = Number.parseInt(btn.getAttribute("data-sort-col"), 10);
+          const indicator = btn.querySelector(".sort-indicator");
+          if (!indicator) return;
+          if (col !== activeCol) {
+            indicator.textContent = "";
+            return;
+          }
+          indicator.textContent = dir === 1 ? "\u2191" : "\u2193";
+        });
+      }
       rows.forEach((row) => {
         const detailId = row.getAttribute("data-detail-id");
         const detail = detailId ? document.getElementById(detailId) : null;
@@ -1334,6 +1402,20 @@ function renderOrthopaedicsWaitHtml(payload) {
           const willOpen = detail.hidden;
           detail.hidden = !willOpen;
           btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+        });
+      });
+
+      sortButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const colIndex = Number.parseInt(btn.getAttribute("data-sort-col"), 10);
+          if (!Number.isFinite(colIndex)) return;
+          if (currentSortCol === colIndex) currentSortDir = currentSortDir * -1;
+          else {
+            currentSortCol = colIndex;
+            currentSortDir = 1;
+          }
+          sortHospitalRows(colIndex, currentSortDir);
+          updateSortIndicators(currentSortCol, currentSortDir);
         });
       });
     })();
