@@ -1154,6 +1154,11 @@ function avgAppointmentsCell(totalAppointments, consultantCount) {
   return `${escHtml(avg.toFixed(1))} <span class="muted">(${escHtml(String(totalAppointments))}/${escHtml(String(consultantCount))})</span>`;
 }
 
+function waitSortValue(wait) {
+  if (!wait || !Number.isFinite(wait.waitDays)) return 999999;
+  return wait.waitDays;
+}
+
 function consultantAppointmentsCell(consultant) {
   if (!consultant) return '<span class="muted">N/A</span>';
   if (consultant.appointmentsNext4Weeks == null) return '<span class="muted">N/A</span>';
@@ -1189,7 +1194,16 @@ function renderOrthopaedicsWaitHtml(payload) {
 
   const tableRows = rows
     .map(
-      (row, idx) => `<tr class="hospital-row" data-detail-id="detail-${idx}">
+      (row, idx) => `<tr class="hospital-row"
+        data-detail-id="detail-${idx}"
+        data-sort-1="${escHtml(String(row.orthoConsultantCount))}"
+        data-sort-2="${escHtml(String(waitSortValue(row.orthoAny)))}"
+        data-sort-3="${escHtml(String(waitSortValue(row.hip)))}"
+        data-sort-4="${escHtml(String(waitSortValue(row.knee)))}"
+        data-sort-5="${escHtml(String(row.totals.orthoAny))}"
+        data-sort-6="${escHtml(String(row.totals.hip))}"
+        data-sort-7="${escHtml(String(row.totals.knee))}"
+        data-sort-8="${escHtml(String(row.orthoConsultantCount > 0 ? (row.totals.orthoAny / row.orthoConsultantCount) : -1))}">
         <td>
           <button type="button" class="hospital-btn" aria-expanded="false" aria-controls="detail-${idx}">
             ${escHtml(row.hospital)}
@@ -1319,14 +1333,14 @@ function renderOrthopaedicsWaitHtml(payload) {
         <thead>
           <tr>
             <th>Hospital</th>
-            <th><button type="button" class="sort-btn" data-sort-col="1">Total Orthopaedic Consultants<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="2">Shortest Wait: Orthopaedics (Any)<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="3">Shortest Wait: Hip Replacement<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="4">Shortest Wait: Knee Replacement<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="5">Total Appointments (4w): Orthopaedics<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="6">Total Appointments (4w): Hip Replacement<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="7">Total Appointments (4w): Knee Replacement<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="8">Avg Orthopaedic Appointments per Consultant (4w)<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="1"><button type="button" class="sort-btn">Total Orthopaedic Consultants<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="2"><button type="button" class="sort-btn">Shortest Wait: Orthopaedics (Any)<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="3"><button type="button" class="sort-btn">Shortest Wait: Hip Replacement<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="4"><button type="button" class="sort-btn">Shortest Wait: Knee Replacement<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="5"><button type="button" class="sort-btn">Total Appointments (4w): Orthopaedics<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="6"><button type="button" class="sort-btn">Total Appointments (4w): Hip Replacement<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="7"><button type="button" class="sort-btn">Total Appointments (4w): Knee Replacement<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="8"><button type="button" class="sort-btn">Avg Orthopaedic Appointments per Consultant (4w)<span class="sort-indicator"></span></button></th>
           </tr>
         </thead>
         <tbody>
@@ -1340,17 +1354,15 @@ function renderOrthopaedicsWaitHtml(payload) {
   <script>
     (function () {
       const rows = document.querySelectorAll(".hospital-row");
-      const sortButtons = document.querySelectorAll(".sort-btn[data-sort-col]");
+      const sortButtons = document.querySelectorAll("th[data-sort-col]");
       const tbody = document.querySelector(".panel tbody");
       let currentSortCol = null;
       let currentSortDir = 1;
 
       function parseSortValue(row, colIndex) {
-        const cell = row && row.cells ? row.cells[colIndex] : null;
-        if (!cell) return Number.POSITIVE_INFINITY;
-        const text = cell.textContent || "";
-        const numMatch = text.match(/-?\d+(\.\d+)?/);
-        if (numMatch) return Number.parseFloat(numMatch[0]);
+        const raw = row.getAttribute("data-sort-" + String(colIndex));
+        const n = Number.parseFloat(raw);
+        if (Number.isFinite(n)) return n;
         return Number.POSITIVE_INFINITY;
       }
 

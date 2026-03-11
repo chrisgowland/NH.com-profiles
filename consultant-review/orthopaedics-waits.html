@@ -105,14 +105,14 @@
         <thead>
           <tr>
             <th>Hospital</th>
-            <th><button type="button" class="sort-btn" data-sort-col="1">Total Orthopaedic Consultants<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="2">Shortest Wait: Orthopaedics (Any)<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="3">Shortest Wait: Hip Replacement<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="4">Shortest Wait: Knee Replacement<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="5">Total Appointments (4w): Orthopaedics<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="6">Total Appointments (4w): Hip Replacement<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="7">Total Appointments (4w): Knee Replacement<span class="sort-indicator"></span></button></th>
-            <th><button type="button" class="sort-btn" data-sort-col="8">Avg Orthopaedic Appointments per Consultant (4w)<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="1"><button type="button" class="sort-btn">Total Orthopaedic Consultants<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="2"><button type="button" class="sort-btn">Shortest Wait: Orthopaedics (Any)<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="3"><button type="button" class="sort-btn">Shortest Wait: Hip Replacement<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="4"><button type="button" class="sort-btn">Shortest Wait: Knee Replacement<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="5"><button type="button" class="sort-btn">Total Appointments (4w): Orthopaedics<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="6"><button type="button" class="sort-btn">Total Appointments (4w): Hip Replacement<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="7"><button type="button" class="sort-btn">Total Appointments (4w): Knee Replacement<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="8"><button type="button" class="sort-btn">Avg Orthopaedic Appointments per Consultant (4w)<span class="sort-indicator"></span></button></th>
           </tr>
         </thead>
         <tbody>
@@ -3543,7 +3543,7 @@
   <script>
     (function () {
       const rows = document.querySelectorAll(".hospital-row");
-      const sortButtons = document.querySelectorAll(".sort-btn[data-sort-col]");
+      const sortButtons = document.querySelectorAll("th[data-sort-col]");
       const tbody = document.querySelector(".panel tbody");
       let currentSortCol = null;
       let currentSortDir = 1;
