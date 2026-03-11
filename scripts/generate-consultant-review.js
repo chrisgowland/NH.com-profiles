@@ -1131,6 +1131,20 @@ function buildHospitalWaitRows(records) {
     };
   });
 
+  const cardiffValeSource = rows.find((r) => r.hospital === "Cardiff and Vale Hospitals");
+  const hasCardiffValeRow = rows.some((r) => r.hospital === "Cardiff Vale");
+  if (cardiffValeSource && !hasCardiffValeRow) {
+    rows.push({
+      hospital: "Cardiff Vale",
+      orthoConsultantCount: cardiffValeSource.orthoConsultantCount,
+      consultants: [...cardiffValeSource.consultants],
+      orthoAny: cardiffValeSource.orthoAny,
+      hip: cardiffValeSource.hip,
+      knee: cardiffValeSource.knee,
+      totals: { ...cardiffValeSource.totals },
+    });
+  }
+
   rows.sort((a, b) => {
     const aWait = a.orthoAny ? a.orthoAny.waitDays : Number.POSITIVE_INFINITY;
     const bWait = b.orthoAny ? b.orthoAny.waitDays : Number.POSITIVE_INFINITY;

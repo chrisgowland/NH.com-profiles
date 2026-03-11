@@ -3548,6 +3548,40 @@
       let currentSortCol = null;
       let currentSortDir = 1;
 
+      function addCardiffValeAliasRow() {
+        if (!tbody) return;
+        const sourceRow = [...tbody.querySelectorAll("tr.hospital-row")].find((row) => {
+          const btn = row.querySelector(".hospital-btn");
+          return btn && btn.textContent.trim() === "Cardiff and Vale Hospitals";
+        });
+        if (!sourceRow) return;
+        const alreadyExists = [...tbody.querySelectorAll("tr.hospital-row")].some((row) => {
+          const btn = row.querySelector(".hospital-btn");
+          return btn && btn.textContent.trim() === "Cardiff Vale";
+        });
+        if (alreadyExists) return;
+        const sourceDetailId = sourceRow.getAttribute("data-detail-id");
+        const sourceDetail = sourceDetailId ? document.getElementById(sourceDetailId) : null;
+        if (!sourceDetail) return;
+
+        const aliasRow = sourceRow.cloneNode(true);
+        const aliasDetail = sourceDetail.cloneNode(true);
+        const aliasDetailId = sourceDetailId + "-cardiff-vale";
+        aliasRow.setAttribute("data-detail-id", aliasDetailId);
+        aliasDetail.id = aliasDetailId;
+        aliasDetail.hidden = true;
+
+        const aliasBtn = aliasRow.querySelector(".hospital-btn");
+        if (aliasBtn) {
+          aliasBtn.textContent = "Cardiff Vale";
+          aliasBtn.setAttribute("aria-controls", aliasDetailId);
+          aliasBtn.setAttribute("aria-expanded", "false");
+        }
+
+        sourceDetail.after(aliasRow);
+        aliasRow.after(aliasDetail);
+      }
+
       function parseSortValue(row, colIndex) {
         const cell = row && row.cells ? row.cells[colIndex] : null;
         if (!cell) return Number.POSITIVE_INFINITY;
@@ -3596,7 +3630,9 @@
           indicator.textContent = dir === 1 ? "\u2191" : "\u2193";
         });
       }
-      rows.forEach((row) => {
+      addCardiffValeAliasRow();
+
+      document.querySelectorAll(".hospital-row").forEach((row) => {
         const detailId = row.getAttribute("data-detail-id");
         const detail = detailId ? document.getElementById(detailId) : null;
         const btn = row.querySelector(".hospital-btn");
