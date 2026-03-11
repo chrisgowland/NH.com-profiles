@@ -36,7 +36,6 @@ const CLINICAL_TERMS = [
 ];
 
 const ORTHO_WAITS_EXCLUDED_HOSPITALS = new Set([
-  "Cardiff Bay Hospital",
   "Manchester Diagnostic Suite",
   "Manchester Institute of Health &amp; Performance (MIHP)",
   "Tees Hospital NHS treatments",
@@ -1080,6 +1079,46 @@ function sumAppointmentsNext4Weeks(records, hospitalName) {
   }, 0);
 }
 
+function mergeWaits(waits) {
+  const valid = waits.filter((w) => w && Number.isFinite(w.waitDays));
+  if (valid.length === 0) return null;
+  return valid.sort((a, b) => {
+    if (a.waitDays !== b.waitDays) return a.waitDays - b.waitDays;
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  })[0];
+}
+
+function mergeConsultants(consultantLists) {
+  const byKey = new Map();
+  for (const list of consultantLists) {
+    for (const c of list || []) {
+      const key = `${c.url || ""}|${c.name || ""}`;
+      const existing = byKey.get(key);
+      const value = c.appointmentsNext4Weeks == null ? 0 : Number(c.appointmentsNext4Weeks);
+      if (!existing) {
+        byKey.set(key, {
+          name: c.name || "",
+          url: c.url || "",
+          appointmentsNext4Weeks: Number.isFinite(value) ? value : null,
+        });
+        continue;
+      }
+      if (existing.appointmentsNext4Weeks == null && Number.isFinite(value)) {
+        existing.appointmentsNext4Weeks = value;
+      } else if (existing.appointmentsNext4Weeks != null && Number.isFinite(value)) {
+        existing.appointmentsNext4Weeks += value;
+      }
+    }
+  }
+
+  return [...byKey.values()].sort((a, b) => {
+    const aCount = a.appointmentsNext4Weeks == null ? -1 : a.appointmentsNext4Weeks;
+    const bCount = b.appointmentsNext4Weeks == null ? -1 : b.appointmentsNext4Weeks;
+    if (aCount !== bCount) return bCount - aCount;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 function buildHospitalWaitRows(records) {
   const hospitalSet = new Set();
   for (const r of records) {
@@ -1131,28 +1170,37 @@ function buildHospitalWaitRows(records) {
     };
   });
 
-  const cardiffValeSource = rows.find((r) => r.hospital === "Cardiff and Vale Hospitals");
-  const hasCardiffValeRow = rows.some((r) => r.hospital === "Cardiff Vale");
-  if (cardiffValeSource && !hasCardiffValeRow) {
+  const cardiffSourceNames = new Set(["Cardiff and Vale Hospitals", "Cardiff Bay Hospital", "Cardiff Vale"]);
+  const cardiffSources = rows.filter((r) => cardiffSourceNames.has(r.hospital));
+  if (cardiffSources.length > 0) {
+    const mergedConsultants = mergeConsultants(cardiffSources.map((r) => r.consultants));
+    const consultantIds = new Set(mergedConsultants.map((c) => c.url || c.name).filter(Boolean));
+
     rows.push({
-      hospital: "Cardiff Vale",
-      orthoConsultantCount: cardiffValeSource.orthoConsultantCount,
-      consultants: [...cardiffValeSource.consultants],
-      orthoAny: cardiffValeSource.orthoAny,
-      hip: cardiffValeSource.hip,
-      knee: cardiffValeSource.knee,
-      totals: { ...cardiffValeSource.totals },
+      hospital: "Cardiff",
+      orthoConsultantCount: consultantIds.size,
+      consultants: mergedConsultants,
+      orthoAny: mergeWaits(cardiffSources.map((r) => r.orthoAny)),
+      hip: mergeWaits(cardiffSources.map((r) => r.hip)),
+      knee: mergeWaits(cardiffSources.map((r) => r.knee)),
+      totals: {
+        orthoAny: cardiffSources.reduce((sum, r) => sum + Number(r.totals.orthoAny || 0), 0),
+        hip: cardiffSources.reduce((sum, r) => sum + Number(r.totals.hip || 0), 0),
+        knee: cardiffSources.reduce((sum, r) => sum + Number(r.totals.knee || 0), 0),
+      },
     });
   }
 
-  rows.sort((a, b) => {
+  const finalRows = rows.filter((r) => !cardiffSourceNames.has(r.hospital));
+
+  finalRows.sort((a, b) => {
     const aWait = a.orthoAny ? a.orthoAny.waitDays : Number.POSITIVE_INFINITY;
     const bWait = b.orthoAny ? b.orthoAny.waitDays : Number.POSITIVE_INFINITY;
     if (aWait !== bWait) return aWait - bWait;
     return a.hospital.localeCompare(b.hospital);
   });
 
-  return rows;
+  return finalRows;
 }
 
 function waitCellHtml(wait) {

@@ -3548,38 +3548,93 @@
       let currentSortCol = null;
       let currentSortDir = 1;
 
-      function addCardiffValeAliasRow() {
+      function parseIntFromCell(row, idx) {
+        const cell = row && row.cells ? row.cells[idx] : null;
+        if (!cell) return 0;
+        const m = (cell.textContent || "").match(/-?\d+(\.\d+)?/);
+        return m ? Number.parseFloat(m[0]) : 0;
+      }
+
+      function parseWaitCell(row, idx) {
+        const cell = row && row.cells ? row.cells[idx] : null;
+        if (!cell) return null;
+        const m = (cell.textContent || "").match(/-?\d+(\.\d+)?/);
+        if (!m) return null;
+        const days = Number.parseFloat(m[0]);
+        if (!Number.isFinite(days)) return null;
+        return { days, html: cell.innerHTML };
+      }
+
+      function mergeCardiffRows() {
         if (!tbody) return;
-        const sourceRow = [...tbody.querySelectorAll("tr.hospital-row")].find((row) => {
-          const btn = row.querySelector(".hospital-btn");
-          return btn && btn.textContent.trim() === "Cardiff and Vale Hospitals";
-        });
-        if (!sourceRow) return;
-        const alreadyExists = [...tbody.querySelectorAll("tr.hospital-row")].some((row) => {
-          const btn = row.querySelector(".hospital-btn");
-          return btn && btn.textContent.trim() === "Cardiff Vale";
-        });
-        if (alreadyExists) return;
-        const sourceDetailId = sourceRow.getAttribute("data-detail-id");
-        const sourceDetail = sourceDetailId ? document.getElementById(sourceDetailId) : null;
-        if (!sourceDetail) return;
+        const cardiffNames = new Set(["Cardiff and Vale Hospitals", "Cardiff Bay Hospital", "Cardiff Vale", "Cardiff"]);
+        const pairs = [...tbody.querySelectorAll("tr.hospital-row")]
+          .map((row) => {
+            const btn = row.querySelector(".hospital-btn");
+            const name = btn ? btn.textContent.trim() : "";
+            if (!cardiffNames.has(name)) return null;
+            const detailId = row.getAttribute("data-detail-id");
+            const detail = detailId ? document.getElementById(detailId) : null;
+            return { row, detail, name };
+          })
+          .filter(Boolean);
 
-        const aliasRow = sourceRow.cloneNode(true);
-        const aliasDetail = sourceDetail.cloneNode(true);
-        const aliasDetailId = sourceDetailId + "-cardiff-vale";
-        aliasRow.setAttribute("data-detail-id", aliasDetailId);
-        aliasDetail.id = aliasDetailId;
-        aliasDetail.hidden = true;
+        if (pairs.length === 0) return;
+        if (pairs.length === 1 && pairs[0].name === "Cardiff") return;
 
-        const aliasBtn = aliasRow.querySelector(".hospital-btn");
-        if (aliasBtn) {
-          aliasBtn.textContent = "Cardiff Vale";
-          aliasBtn.setAttribute("aria-controls", aliasDetailId);
-          aliasBtn.setAttribute("aria-expanded", "false");
+        const base = pairs.find((p) => p.name === "Cardiff") || pairs[0];
+        const otherPairs = pairs.filter((p) => p !== base);
+        const totalConsultants = pairs.reduce((sum, p) => sum + parseIntFromCell(p.row, 1), 0);
+        const totalOrtho = pairs.reduce((sum, p) => sum + parseIntFromCell(p.row, 5), 0);
+        const totalHip = pairs.reduce((sum, p) => sum + parseIntFromCell(p.row, 6), 0);
+        const totalKnee = pairs.reduce((sum, p) => sum + parseIntFromCell(p.row, 7), 0);
+        const avg = totalConsultants > 0 ? (totalOrtho / totalConsultants) : 0;
+
+        const waitsAny = pairs.map((p) => parseWaitCell(p.row, 2)).filter(Boolean).sort((a, b) => a.days - b.days);
+        const waitsHip = pairs.map((p) => parseWaitCell(p.row, 3)).filter(Boolean).sort((a, b) => a.days - b.days);
+        const waitsKnee = pairs.map((p) => parseWaitCell(p.row, 4)).filter(Boolean).sort((a, b) => a.days - b.days);
+
+        const baseBtn = base.row.querySelector(".hospital-btn");
+        if (baseBtn) baseBtn.textContent = "Cardiff";
+        base.row.cells[1].textContent = String(totalConsultants);
+        base.row.cells[2].innerHTML = waitsAny.length ? waitsAny[0].html : '<span class="muted">N/A</span>';
+        base.row.cells[3].innerHTML = waitsHip.length ? waitsHip[0].html : '<span class="muted">N/A</span>';
+        base.row.cells[4].innerHTML = waitsKnee.length ? waitsKnee[0].html : '<span class="muted">N/A</span>';
+        base.row.cells[5].textContent = String(totalOrtho);
+        base.row.cells[6].textContent = String(totalHip);
+        base.row.cells[7].textContent = String(totalKnee);
+        base.row.cells[8].innerHTML = avg.toFixed(1) + ' <span class="muted">(' + totalOrtho + '/' + totalConsultants + ')</span>';
+
+        const consultants = new Map();
+        pairs.forEach((p) => {
+          if (!p.detail) return;
+          p.detail.querySelectorAll("tbody tr").forEach((tr) => {
+            const link = tr.querySelector("td:first-child a");
+            const name = link ? link.textContent.trim() : "";
+            const url = link ? link.getAttribute("href") : "";
+            const appts = parseIntFromCell(tr, 1);
+            const key = `${url}|${name}`;
+            const existing = consultants.get(key) || { name, url, appts: 0 };
+            existing.appts += appts;
+            consultants.set(key, existing);
+          });
+        });
+
+        if (base.detail) {
+          const body = base.detail.querySelector("tbody");
+          if (body) {
+            const mergedRows = [...consultants.values()]
+              .sort((a, b) => (b.appts - a.appts) || a.name.localeCompare(b.name))
+              .map((c) => `<tr><td><a href="${c.url}" target="_blank" rel="noopener">${c.name}</a></td><td>${c.appts}</td></tr>`)
+              .join("");
+            body.innerHTML = mergedRows || '<tr><td colspan="2">No orthopaedic consultants found for this site.</td></tr>';
+          }
         }
 
-        sourceDetail.after(aliasRow);
-        aliasRow.after(aliasDetail);
+        otherPairs.forEach((p) => {
+          if (p.row && p.row.parentNode) p.row.parentNode.removeChild(p.row);
+          if (p.detail && p.detail.parentNode) p.detail.parentNode.removeChild(p.detail);
+        });
       }
 
       function parseSortValue(row, colIndex) {
@@ -3630,7 +3685,7 @@
           indicator.textContent = dir === 1 ? "\u2191" : "\u2193";
         });
       }
-      addCardiffValeAliasRow();
+      mergeCardiffRows();
 
       document.querySelectorAll(".hospital-row").forEach((row) => {
         const detailId = row.getAttribute("data-detail-id");
