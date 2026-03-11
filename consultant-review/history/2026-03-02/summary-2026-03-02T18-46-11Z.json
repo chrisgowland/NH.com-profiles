@@ -1,0 +1,30 @@
+{
+  "snapshotCreatedAt": "2026-03-02T18:57:41.691Z",
+  "sourceGeneratedAt": "2026-03-02T18:46:11.159Z",
+  "totals": {
+    "included": 3526,
+    "excluded": 282,
+    "passCount": 1933,
+    "failCount": 1593,
+    "passRate": "54.8%"
+  },
+  "criteriaRates": {
+    "photoPass": "100.0%",
+    "clinicalTermsPass": "96.8%",
+    "specialtyPass": "99.3%",
+    "proceduresPass": "85.6%",
+    "insurersPass": "76.9%",
+    "qualificationsPass": "98.5%",
+    "gmcPass": "97.9%",
+    "bookOnlinePass": "75.3%"
+  },
+  "bookingRates": {
+    "noAppointmentsNext5DaysCount": 1545,
+    "noAppointmentsNext5DaysRate": "43.8%",
+    "lessThan12In4WeeksCount": 1969,
+    "lessThan12In4WeeksRate": "55.8%"
+  },
+  "files": {
+    "bookingCsv": "history/2026-03-02/booking-report-2026-03-02T18-46-11Z.csv"
+  }
+}
