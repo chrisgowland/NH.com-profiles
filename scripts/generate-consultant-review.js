@@ -1140,10 +1140,12 @@ function buildHospitalWaitRows(records) {
       .map((r) => {
         const booking = getBookingForHospital(r, hospital);
         const n = Number(booking ? booking.appointmentsNext4Weeks : null);
+        const firstDays = Number(booking ? booking.firstAvailableDaysAway : null);
         return {
           name: r.name || "",
           url: r.url || "",
           appointmentsNext4Weeks: Number.isFinite(n) ? n : null,
+          firstAvailableDaysAway: Number.isFinite(firstDays) && firstDays >= 0 ? firstDays : null,
         };
       })
       .sort((a, b) => {
@@ -1225,6 +1227,12 @@ function consultantAppointmentsCell(consultant) {
   return escHtml(String(consultant.appointmentsNext4Weeks));
 }
 
+function consultantFirstDaysCell(consultant) {
+  if (!consultant) return '<span class="muted">N/A</span>';
+  if (consultant.firstAvailableDaysAway == null) return '<span class="muted">N/A</span>';
+  return escHtml(String(consultant.firstAvailableDaysAway));
+}
+
 function consultantListHtml(row) {
   if (!row.consultants || row.consultants.length === 0) {
     return '<div class="muted">No orthopaedic consultants found for this site.</div>';
@@ -1234,6 +1242,7 @@ function consultantListHtml(row) {
       (c) => `<tr>
         <td><a href="${escHtml(c.url)}" target="_blank" rel="noopener">${escHtml(c.name || c.url || "Consultant")}</a></td>
         <td>${consultantAppointmentsCell(c)}</td>
+        <td>${consultantFirstDaysCell(c)}</td>
       </tr>`
     )
     .join("");
@@ -1242,6 +1251,7 @@ function consultantListHtml(row) {
       <tr>
         <th>Orthopaedic Consultant</th>
         <th>Appointments (Next 4 Weeks)</th>
+        <th>First Available (Days)</th>
       </tr>
     </thead>
     <tbody>${items}</tbody>
