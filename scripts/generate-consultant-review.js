@@ -1093,11 +1093,15 @@ function mergeConsultants(consultantLists) {
       const key = `${c.url || ""}|${c.name || ""}`;
       const existing = byKey.get(key);
       const value = c.appointmentsNext4Weeks == null ? 0 : Number(c.appointmentsNext4Weeks);
+      const firstDays =
+        c.firstAvailableDaysAway == null ? null : Number(c.firstAvailableDaysAway);
       if (!existing) {
         byKey.set(key, {
           name: c.name || "",
           url: c.url || "",
           appointmentsNext4Weeks: Number.isFinite(value) ? value : null,
+          firstAvailableDaysAway:
+            Number.isFinite(firstDays) && firstDays >= 0 ? firstDays : null,
         });
         continue;
       }
@@ -1105,6 +1109,11 @@ function mergeConsultants(consultantLists) {
         existing.appointmentsNext4Weeks = value;
       } else if (existing.appointmentsNext4Weeks != null && Number.isFinite(value)) {
         existing.appointmentsNext4Weeks += value;
+      }
+
+      if (Number.isFinite(firstDays) && firstDays >= 0) {
+        if (existing.firstAvailableDaysAway == null) existing.firstAvailableDaysAway = firstDays;
+        else existing.firstAvailableDaysAway = Math.min(existing.firstAvailableDaysAway, firstDays);
       }
     }
   }
