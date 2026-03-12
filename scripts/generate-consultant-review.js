@@ -1233,6 +1233,7 @@ function waitSortValue(wait) {
 function consultantAppointmentsCell(consultant) {
   if (!consultant) return '<span class="muted">N/A</span>';
   if (consultant.appointmentsNext4Weeks == null) return '<span class="muted">N/A</span>';
+  if (consultant.appointmentsNext4Weeks <= 0) return '<span class="muted">none in next 4 weeks</span>';
   return escHtml(String(consultant.appointmentsNext4Weeks));
 }
 
