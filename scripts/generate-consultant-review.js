@@ -1239,6 +1239,9 @@ function consultantAppointmentsCell(consultant) {
 
 function consultantFirstDaysCell(consultant) {
   if (!consultant) return '<span class="muted">N/A</span>';
+  if (consultant.appointmentsNext4Weeks != null && consultant.appointmentsNext4Weeks <= 0) {
+    return '<span class="muted">none in next 4 weeks</span>';
+  }
   if (consultant.firstAvailableDaysAway == null) return '<span class="muted">N/A</span>';
   return escHtml(String(consultant.firstAvailableDaysAway));
 }
