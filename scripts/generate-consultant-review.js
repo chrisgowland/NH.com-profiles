@@ -487,19 +487,17 @@ async function evaluateConsultant(urlPath, html, swiftype, bookingContext) {
     }
   }
 
+  // If APIM lookup is unavailable/partial, fall back to swiftype metadata
+  // so we do not suppress known availability.
   const resolvedAppointmentsNext4Weeks =
     liveBooking && liveBooking.appointmentsNext4Weeks != null
       ? liveBooking.appointmentsNext4Weeks
-      : attemptedLiveBooking
-        ? null
       : Number.isNaN(upcomingAppointments)
         ? null
         : upcomingAppointments;
   const resolvedFirstAvailableDaysAway =
     liveBooking && liveBooking.firstAvailableDaysAway != null
       ? liveBooking.firstAvailableDaysAway
-      : attemptedLiveBooking
-        ? null
       : Number.isNaN(daysUntilNextAppointment)
         ? null
         : daysUntilNextAppointment;
