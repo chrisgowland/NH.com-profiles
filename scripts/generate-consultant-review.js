@@ -1113,6 +1113,21 @@ function consultantIsOrthopaedics(record) {
   return record.specialties.some((s) => /\borthop(a)?edic\b/i.test(String(s || "")));
 }
 
+function consultantIsOncology(record) {
+  if (!record || !Array.isArray(record.specialties)) return false;
+  return record.specialties.some((s) => /\boncolog/i.test(String(s || "")));
+}
+
+function consultantIsUrology(record) {
+  if (!record || !Array.isArray(record.specialties)) return false;
+  return record.specialties.some((s) => /\burology\b|\burolog/i.test(String(s || "")));
+}
+
+function consultantIsGeneralSurgery(record) {
+  if (!record || !Array.isArray(record.specialties)) return false;
+  return record.specialties.some((s) => /\bgeneral surgery\b/i.test(String(s || "")));
+}
+
 function getBookingForHospital(record, hospitalName) {
   if (!record || !record.booking) return null;
   if (
@@ -1358,14 +1373,141 @@ function consultantListHtml(row) {
   </table>`;
 }
 
-function renderOrthopaedicsWaitHtml(payload) {
-  const rows = buildHospitalWaitRows(payload.records);
-  const generatedAt = payload.summary.generatedAt;
+function buildGenericSpecialtyRows(records, isSpecialtyFn) {
+  const hospitalSet = new Set();
+  for (const r of records) {
+    for (const h of r.hospitals || []) {
+      if (h && String(h).trim()) hospitalSet.add(String(h).trim());
+    }
+  }
+  const hospitals = [...hospitalSet].sort((a, b) => a.localeCompare(b));
+  const filteredHospitals = hospitals.filter((h) => !ORTHO_WAITS_EXCLUDED_HOSPITALS.has(h));
 
+  const rows = filteredHospitals.map((hospital) => {
+    const inHospital = records.filter((r) => (r.hospitals || []).includes(hospital));
+    const specialtyRecords = inHospital.filter((r) => isSpecialtyFn(r));
+    const consultantCount = new Set(specialtyRecords.map((r) => r.url).filter(Boolean)).size;
+    if (consultantCount === 0) return null;
+
+    const consultants = specialtyRecords
+      .map((r) => {
+        const booking = getBookingForHospital(r, hospital);
+        const n = Number(booking ? booking.appointmentsNext4Weeks : null);
+        const firstDays = Number(booking ? booking.firstAvailableDaysAway : null);
+        return {
+          name: r.name || "",
+          url: r.url || "",
+          appointmentsNext4Weeks: Number.isFinite(n) ? n : null,
+          firstAvailableDaysAway: Number.isFinite(firstDays) && firstDays >= 0 ? firstDays : null,
+        };
+      })
+      .sort((a, b) => {
+        const aCount = a.appointmentsNext4Weeks == null ? -1 : a.appointmentsNext4Weeks;
+        const bCount = b.appointmentsNext4Weeks == null ? -1 : b.appointmentsNext4Weeks;
+        if (aCount !== bCount) return bCount - aCount;
+        return a.name.localeCompare(b.name);
+      });
+
+    return {
+      hospital,
+      consultantCount,
+      consultants,
+      bestWait: pickBestWait(specialtyRecords, hospital),
+      totalAppointments: sumAppointmentsNext4Weeks(specialtyRecords, hospital),
+    };
+  }).filter(Boolean);
+
+  rows.sort((a, b) => {
+    const aWait = a.bestWait ? a.bestWait.waitDays : Number.POSITIVE_INFINITY;
+    const bWait = b.bestWait ? b.bestWait.waitDays : Number.POSITIVE_INFINITY;
+    if (aWait !== bWait) return aWait - bWait;
+    return a.hospital.localeCompare(b.hospital);
+  });
+
+  return rows;
+}
+
+function genericConsultantListHtml(row, specialtyLabel) {
+  if (!row.consultants || row.consultants.length === 0) {
+    return `<div class="muted">No ${escHtml(specialtyLabel)} consultants found for this site.</div>`;
+  }
+  const items = row.consultants
+    .map(
+      (c) => `<tr>
+        <td><a href="${escHtml(c.url)}" target="_blank" rel="noopener">${escHtml(c.name || c.url || "Consultant")}</a></td>
+        <td>${consultantAppointmentsCell(c)}</td>
+        <td>${consultantFirstDaysCell(c)}</td>
+      </tr>`
+    )
+    .join("");
+  return `<table class="detail-table">
+  <thead>
+    <tr>
+      <th>${escHtml(specialtyLabel)} Consultant</th>
+      <th>Appointments (Next 4 Weeks)</th>
+      <th>First Available (Days)</th>
+    </tr>
+  </thead>
+  <tbody>${items}</tbody>
+</table>`;
+}
+
+function renderGenericSpecialtyPanel(rows, tabId, specialtyLabel) {
+  const colspan = 5;
   const tableRows = rows
     .map(
       (row, idx) => `<tr class="hospital-row"
-        data-detail-id="detail-${idx}"
+        data-detail-id="${tabId}-detail-${idx}"
+        data-sort-1="${escHtml(String(row.consultantCount))}"
+        data-sort-2="${escHtml(String(row.bestWait ? row.bestWait.waitDays : 999999))}"
+        data-sort-3="${escHtml(String(row.totalAppointments))}"
+        data-sort-4="${escHtml(String(row.consultantCount > 0 ? row.totalAppointments / row.consultantCount : -1))}">
+        <td>
+          <button type="button" class="hospital-btn" aria-expanded="false" aria-controls="${tabId}-detail-${idx}">
+            ${escHtml(row.hospital)}
+          </button>
+        </td>
+        <td>${escHtml(String(row.consultantCount))}</td>
+        <td>${waitCellHtml(row.bestWait)}</td>
+        <td>${escHtml(String(row.totalAppointments))}</td>
+        <td>${avgAppointmentsCell(row.totalAppointments, row.consultantCount)}</td>
+      </tr>
+      <tr id="${tabId}-detail-${idx}" class="detail-row" hidden>
+        <td colspan="${colspan}">
+          ${genericConsultantListHtml(row, specialtyLabel)}
+        </td>
+      </tr>`
+    )
+    .join("");
+
+  return `<section class="panel tab-panel" id="tab-${tabId}" hidden>
+      <table>
+        <thead>
+          <tr>
+            <th>Hospital</th>
+            <th data-sort-col="1"><button type="button" class="sort-btn">Total ${escHtml(specialtyLabel)} Consultants<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="2"><button type="button" class="sort-btn">Shortest Wait<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="3"><button type="button" class="sort-btn">Total Appointments (4w)<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="4"><button type="button" class="sort-btn">Avg Appointments per Consultant (4w)<span class="sort-indicator"></span></button></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows || `<tr><td colspan="${colspan}" class="muted" style="padding:16px">No data available.</td></tr>`}
+        </tbody>
+      </table>
+    </section>`;
+}
+
+function renderSpecialtyWaitsHtml(payload) {
+  const records = payload.records;
+  const generatedAt = payload.summary.generatedAt;
+
+  // Orthopaedics tab (retains hip/knee sub-columns)
+  const orthoRows = buildHospitalWaitRows(records);
+  const orthoTableRows = orthoRows
+    .map(
+      (row, idx) => `<tr class="hospital-row"
+        data-detail-id="ortho-detail-${idx}"
         data-sort-1="${escHtml(String(row.orthoConsultantCount))}"
         data-sort-2="${escHtml(String(waitSortValue(row.orthoAny)))}"
         data-sort-3="${escHtml(String(waitSortValue(row.hip)))}"
@@ -1375,7 +1517,7 @@ function renderOrthopaedicsWaitHtml(payload) {
         data-sort-7="${escHtml(String(row.totals.knee))}"
         data-sort-8="${escHtml(String(row.orthoConsultantCount > 0 ? (row.totals.orthoAny / row.orthoConsultantCount) : -1))}">
         <td>
-          <button type="button" class="hospital-btn" aria-expanded="false" aria-controls="detail-${idx}">
+          <button type="button" class="hospital-btn" aria-expanded="false" aria-controls="ortho-detail-${idx}">
             ${escHtml(row.hospital)}
           </button>
         </td>
@@ -1388,7 +1530,7 @@ function renderOrthopaedicsWaitHtml(payload) {
         <td>${escHtml(String(row.totals.knee))}</td>
         <td>${avgAppointmentsCell(row.totals.orthoAny, row.orthoConsultantCount)}</td>
       </tr>
-      <tr id="detail-${idx}" class="detail-row" hidden>
+      <tr id="ortho-detail-${idx}" class="detail-row" hidden>
         <td colspan="9">
           ${consultantListHtml(row)}
         </td>
@@ -1396,12 +1538,26 @@ function renderOrthopaedicsWaitHtml(payload) {
     )
     .join("");
 
+  // Other specialty tabs (simpler layout)
+  const oncologyPanel = renderGenericSpecialtyPanel(
+    buildGenericSpecialtyRows(records, consultantIsOncology),
+    "oncology", "Oncology"
+  );
+  const urologyPanel = renderGenericSpecialtyPanel(
+    buildGenericSpecialtyRows(records, consultantIsUrology),
+    "urology", "Urology"
+  );
+  const generalSurgeryPanel = renderGenericSpecialtyPanel(
+    buildGenericSpecialtyRows(records, consultantIsGeneralSurgery),
+    "general-surgery", "General Surgery"
+  );
+
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nuffield Orthopaedics Waits by Hospital</title>
+  <title>Nuffield Specialty Waits by Hospital</title>
   <style>
     :root {
       --ink: #1a2f2a;
@@ -1426,7 +1582,27 @@ function renderOrthopaedicsWaitHtml(payload) {
       margin-bottom: 16px;
     }
     .hero h1 { margin: 0 0 8px 0; font-size: 1.6rem; }
-    .hero p { margin: 0; opacity: 0.95; }
+    .hero p { margin: 0 0 4px 0; opacity: 0.95; }
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+    .tab-btn {
+      all: unset;
+      cursor: pointer;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      background: rgba(255,255,255,0.15);
+      color: #fff;
+      border: 2px solid transparent;
+      transition: background 0.15s;
+    }
+    .tab-btn:hover { background: rgba(255,255,255,0.28); }
+    .tab-btn.active { background: #fff; color: var(--green); }
     .panel {
       background: var(--card);
       border: 1px solid var(--line);
@@ -1494,11 +1670,18 @@ function renderOrthopaedicsWaitHtml(payload) {
 <body>
   <div class="wrap">
     <section class="hero">
-      <h1>Nuffield Orthopaedics Waits by Hospital</h1>
+      <h1>Nuffield Specialty Waits by Hospital</h1>
       <p>Generated: ${escHtml(generatedAt)}</p>
-      <p>Sorted by shortest online-bookable orthopaedics wait (any type), then hospital name.</p>
+      <p>Sorted by shortest online-bookable wait, then hospital name.</p>
+      <div class="tab-bar">
+        <button type="button" class="tab-btn active" data-tab="ortho">Orthopaedics</button>
+        <button type="button" class="tab-btn" data-tab="oncology">Oncology</button>
+        <button type="button" class="tab-btn" data-tab="urology">Urology</button>
+        <button type="button" class="tab-btn" data-tab="general-surgery">General Surgery</button>
+      </div>
     </section>
-    <section class="panel">
+
+    <section class="panel tab-panel" id="tab-ortho">
       <table>
         <thead>
           <tr>
@@ -1514,90 +1697,94 @@ function renderOrthopaedicsWaitHtml(payload) {
           </tr>
         </thead>
         <tbody>
-          ${tableRows}
+          ${orthoTableRows}
         </tbody>
       </table>
     </section>
-    <p class="note">Click a site name to view orthopaedic consultants and their appointments in the next 4 weeks.</p>
+
+    ${oncologyPanel}
+    ${urologyPanel}
+    ${generalSurgeryPanel}
+
+    <p class="note">Click a site name to view consultants and their appointments in the next 4 weeks.</p>
     <p class="note">Wait values use each consultant&apos;s first online-bookable appointment in days.</p>
   </div>
   <script>
     (function () {
-      const rows = document.querySelectorAll(".hospital-row");
-      const sortButtons = document.querySelectorAll("th[data-sort-col]");
-      const tbody = document.querySelector(".panel tbody");
-      let currentSortCol = null;
-      let currentSortDir = 1;
-
       function parseSortValue(row, colIndex) {
         const raw = row.getAttribute("data-sort-" + String(colIndex));
         const n = Number.parseFloat(raw);
-        if (Number.isFinite(n)) return n;
-        return Number.POSITIVE_INFINITY;
+        return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
       }
 
       function hospitalName(row) {
         const btn = row.querySelector(".hospital-btn");
-        return (btn ? btn.textContent : row.cells[0] && row.cells[0].textContent || "").trim().toLowerCase();
+        return (btn ? btn.textContent : (row.cells[0] ? row.cells[0].textContent : "")).trim().toLowerCase();
       }
 
-      function sortHospitalRows(colIndex, dir) {
-        const pairs = [...tbody.querySelectorAll("tr.hospital-row")].map((row) => {
-          const detailId = row.getAttribute("data-detail-id");
-          const detailRow = detailId ? document.getElementById(detailId) : null;
-          return { row, detailRow };
-        });
-
-        pairs.sort((a, b) => {
-          const av = parseSortValue(a.row, colIndex);
-          const bv = parseSortValue(b.row, colIndex);
-          if (av === bv) return hospitalName(a.row).localeCompare(hospitalName(b.row));
-          return (av - bv) * dir;
-        });
-
-        const frag = document.createDocumentFragment();
-        pairs.forEach((pair) => {
-          frag.appendChild(pair.row);
-          if (pair.detailRow) frag.appendChild(pair.detailRow);
-        });
-        tbody.appendChild(frag);
-      }
-
-      function updateSortIndicators(activeCol, dir) {
-        sortButtons.forEach((btn) => {
-          const col = Number.parseInt(btn.getAttribute("data-sort-col"), 10);
-          const indicator = btn.querySelector(".sort-indicator");
-          if (!indicator) return;
-          if (col !== activeCol) {
-            indicator.textContent = "";
-            return;
-          }
-          indicator.textContent = dir === 1 ? "\u2191" : "\u2193";
-        });
-      }
-      rows.forEach((row) => {
-        const detailId = row.getAttribute("data-detail-id");
-        const detail = detailId ? document.getElementById(detailId) : null;
-        const btn = row.querySelector(".hospital-btn");
-        if (!detail || !btn) return;
+      // Tab switching
+      const tabBtns = document.querySelectorAll(".tab-btn");
+      const tabPanels = document.querySelectorAll(".tab-panel");
+      tabBtns.forEach((btn) => {
         btn.addEventListener("click", () => {
-          const willOpen = detail.hidden;
-          detail.hidden = !willOpen;
-          btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+          const target = btn.getAttribute("data-tab");
+          tabBtns.forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          tabPanels.forEach((p) => { p.hidden = p.id !== "tab-" + target; });
         });
       });
 
-      sortButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const colIndex = Number.parseInt(btn.getAttribute("data-sort-col"), 10);
-          if (!Number.isFinite(colIndex)) return;
-          if (currentSortCol === colIndex) currentSortDir = currentSortDir * -1;
-          else {
-            currentSortCol = colIndex;
-            currentSortDir = 1;
-          }
-          sortHospitalRows(colIndex, currentSortDir);
-          updateSortIndicators(currentSortCol, currentSortDir);
+      // Expand/collapse hospital rows (delegated)
+      document.addEventListener("click", (e) => {
+        const btn = e.target.closest(".hospital-btn");
+        if (!btn) return;
+        const row = btn.closest("tr");
+        if (!row) return;
+        const detailId = row.getAttribute("data-detail-id");
+        if (!detailId) return;
+        const detail = document.getElementById(detailId);
+        if (!detail) return;
+        const willOpen = detail.hidden;
+        detail.hidden = !willOpen;
+        btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      });
+
+      // Sort - scoped per panel
+      document.querySelectorAll(".tab-panel").forEach((panel) => {
+        const tbody = panel.querySelector("tbody");
+        if (!tbody) return;
+        let currentSortCol = null;
+        let currentSortDir = 1;
+
+        panel.querySelectorAll("th[data-sort-col]").forEach((th) => {
+          th.addEventListener("click", () => {
+            const colIndex = Number.parseInt(th.getAttribute("data-sort-col"), 10);
+            if (!Number.isFinite(colIndex)) return;
+            if (currentSortCol === colIndex) currentSortDir *= -1;
+            else { currentSortCol = colIndex; currentSortDir = 1; }
+
+            const pairs = [...tbody.querySelectorAll("tr.hospital-row")].map((row) => {
+              const detailId = row.getAttribute("data-detail-id");
+              return { row, detailRow: detailId ? document.getElementById(detailId) : null };
+            });
+            pairs.sort((a, b) => {
+              const av = parseSortValue(a.row, colIndex);
+              const bv = parseSortValue(b.row, colIndex);
+              if (av === bv) return hospitalName(a.row).localeCompare(hospitalName(b.row));
+              return (av - bv) * currentSortDir;
+            });
+            const frag = document.createDocumentFragment();
+            pairs.forEach(({ row, detailRow }) => {
+              frag.appendChild(row);
+              if (detailRow) frag.appendChild(detailRow);
+            });
+            tbody.appendChild(frag);
+
+            panel.querySelectorAll("th[data-sort-col] .sort-indicator").forEach((ind) => {
+              const col = Number.parseInt(ind.closest("th").getAttribute("data-sort-col"), 10);
+              ind.textContent = col === currentSortCol ? (currentSortDir === 1 ? "\u2191" : "\u2193") : "";
+            });
+          });
         });
       });
     })();
@@ -1687,7 +1874,7 @@ async function main() {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUTPUT_DIR, "data.json"), JSON.stringify(payload, null, 2), "utf8");
   fs.writeFileSync(path.join(OUTPUT_DIR, "index.html"), renderHtml(payload), "utf8");
-  fs.writeFileSync(path.join(OUTPUT_DIR, "orthopaedics-waits.html"), renderOrthopaedicsWaitHtml(payload), "utf8");
+  fs.writeFileSync(path.join(OUTPUT_DIR, "orthopaedics-waits.html"), renderSpecialtyWaitsHtml(payload), "utf8");
   const bookingCsvHeader = [
     "name",
     "url",
@@ -1720,7 +1907,7 @@ async function main() {
 
   console.log("Done.");
   console.log(`Website: ${path.join(OUTPUT_DIR, "index.html")}`);
-  console.log(`Orthopaedics waits: ${path.join(OUTPUT_DIR, "orthopaedics-waits.html")}`);
+  console.log(`Specialty waits: ${path.join(OUTPUT_DIR, "orthopaedics-waits.html")}`);
   console.log(`Data: ${path.join(OUTPUT_DIR, "data.json")}`);
   console.log(`Included: ${summary.totalIncluded} | Excluded: ${summary.totalExcluded}`);
 }
