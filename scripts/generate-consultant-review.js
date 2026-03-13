@@ -1518,6 +1518,32 @@ function renderGenericSpecialtyPanel(rows, tabId, specialtyLabel) {
     </section>`;
 }
 
+function buildAllSpecialtyDataForEmbed(records) {
+  const specialtySet = new Set();
+  for (const r of records) {
+    for (const s of r.specialties || []) {
+      if (s && String(s).trim()) specialtySet.add(String(s).trim());
+    }
+  }
+  const result = {};
+  for (const specialty of [...specialtySet].sort()) {
+    const rows = buildGenericSpecialtyRows(
+      records,
+      (r) => (r.specialties || []).some((s) => s === specialty)
+    );
+    if (rows.length > 0) {
+      result[specialty] = rows.map((row) => ({
+        hospital: row.hospital,
+        consultantCount: row.consultantCount,
+        bestWait: row.bestWait,
+        totalAppointments: row.totalAppointments,
+        consultants: row.consultants,
+      }));
+    }
+  }
+  return result;
+}
+
 function renderSpecialtyWaitsHtml(payload) {
   const records = payload.records;
   const generatedAt = payload.summary.generatedAt;
@@ -1587,6 +1613,8 @@ function renderSpecialtyWaitsHtml(payload) {
     buildGenericSpecialtyRows(records, consultantIsGynaecology),
     "gynaecology", "Gynaecology"
   );
+  const allSpecialtyData = buildAllSpecialtyDataForEmbed(records);
+  const allSpecialtyNames = Object.keys(allSpecialtyData).sort();
 
   return `<!doctype html>
 <html lang="en">
@@ -1639,6 +1667,24 @@ function renderSpecialtyWaitsHtml(payload) {
     }
     .tab-btn:hover { background: rgba(255,255,255,0.28); }
     .tab-btn.active { background: #fff; color: var(--green); }
+    .tab-select {
+      cursor: pointer;
+      padding: 8px 30px 8px 14px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      font-family: inherit;
+      background-color: rgba(255,255,255,0.15);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='white' d='M5 6L0 0h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      color: #fff;
+      border: 2px solid transparent;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+    .tab-select:focus { outline: 2px solid rgba(255,255,255,0.6); }
+    .tab-select option { color: #1a2f2a; background: #fff; }
     .panel {
       background: var(--card);
       border: 1px solid var(--line);
@@ -1718,6 +1764,10 @@ function renderSpecialtyWaitsHtml(payload) {
         <button type="button" class="tab-btn" data-tab="ophthalmology">Ophthalmology</button>
         <button type="button" class="tab-btn" data-tab="cardiology">Cardiology</button>
         <button type="button" class="tab-btn" data-tab="gynaecology">Gynaecology</button>
+        <select class="tab-select" aria-label="More specialties">
+          <option value="">More specialties...</option>
+          ${allSpecialtyNames.map((s) => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join("\n          ")}
+        </select>
       </div>
     </section>
 
@@ -1755,26 +1805,74 @@ function renderSpecialtyWaitsHtml(payload) {
   </div>
   <script>
     (function () {
+      const SPECIALTY_DATA = ${JSON.stringify(allSpecialtyData)};
+
       function parseSortValue(row, colIndex) {
         const raw = row.getAttribute("data-sort-" + String(colIndex));
         const n = Number.parseFloat(raw);
         return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
       }
 
-      function hospitalName(row) {
+      function hospitalNameOf(row) {
         const btn = row.querySelector(".hospital-btn");
         return (btn ? btn.textContent : (row.cells[0] ? row.cells[0].textContent : "")).trim().toLowerCase();
       }
 
+      function initPanelSort(panel) {
+        const tbody = panel.querySelector("tbody");
+        if (!tbody) return;
+        let currentSortCol = null;
+        let currentSortDir = 1;
+        panel.querySelectorAll("th[data-sort-col]").forEach((th) => {
+          th.addEventListener("click", () => {
+            const colIndex = Number.parseInt(th.getAttribute("data-sort-col"), 10);
+            if (!Number.isFinite(colIndex)) return;
+            if (currentSortCol === colIndex) currentSortDir *= -1;
+            else { currentSortCol = colIndex; currentSortDir = 1; }
+            const pairs = [...tbody.querySelectorAll("tr.hospital-row")].map((row) => {
+              const detailId = row.getAttribute("data-detail-id");
+              return { row, detailRow: detailId ? document.getElementById(detailId) : null };
+            });
+            pairs.sort((a, b) => {
+              const av = parseSortValue(a.row, colIndex);
+              const bv = parseSortValue(b.row, colIndex);
+              if (av === bv) return hospitalNameOf(a.row).localeCompare(hospitalNameOf(b.row));
+              return (av - bv) * currentSortDir;
+            });
+            const frag = document.createDocumentFragment();
+            pairs.forEach(({ row, detailRow }) => {
+              frag.appendChild(row);
+              if (detailRow) frag.appendChild(detailRow);
+            });
+            tbody.appendChild(frag);
+            panel.querySelectorAll("th[data-sort-col] .sort-indicator").forEach((ind) => {
+              const col = Number.parseInt(ind.closest("th").getAttribute("data-sort-col"), 10);
+              ind.textContent = col === currentSortCol ? (currentSortDir === 1 ? "\\u2191" : "\\u2193") : "";
+            });
+          });
+        });
+      }
+
       // Tab switching
       const tabBtns = document.querySelectorAll(".tab-btn");
-      const tabPanels = document.querySelectorAll(".tab-panel");
+      const tabSelect = document.querySelector(".tab-select");
+      const staticPanels = document.querySelectorAll(".tab-panel");
+
+      function hideAll() {
+        staticPanels.forEach((p) => { p.hidden = true; });
+        const dyn = document.getElementById("tab-dynamic");
+        if (dyn) dyn.hidden = true;
+      }
+
       tabBtns.forEach((btn) => {
         btn.addEventListener("click", () => {
           const target = btn.getAttribute("data-tab");
           tabBtns.forEach((b) => b.classList.remove("active"));
           btn.classList.add("active");
-          tabPanels.forEach((p) => { p.hidden = p.id !== "tab-" + target; });
+          if (tabSelect) tabSelect.value = "";
+          hideAll();
+          const panel = document.getElementById("tab-" + target);
+          if (panel) panel.hidden = false;
         });
       });
 
@@ -1793,44 +1891,84 @@ function renderSpecialtyWaitsHtml(payload) {
         btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
       });
 
-      // Sort - scoped per panel
-      document.querySelectorAll(".tab-panel").forEach((panel) => {
-        const tbody = panel.querySelector("tbody");
-        if (!tbody) return;
-        let currentSortCol = null;
-        let currentSortDir = 1;
+      // Sort - init all static panels on load
+      staticPanels.forEach(initPanelSort);
 
-        panel.querySelectorAll("th[data-sort-col]").forEach((th) => {
-          th.addEventListener("click", () => {
-            const colIndex = Number.parseInt(th.getAttribute("data-sort-col"), 10);
-            if (!Number.isFinite(colIndex)) return;
-            if (currentSortCol === colIndex) currentSortDir *= -1;
-            else { currentSortCol = colIndex; currentSortDir = 1; }
+      // Dynamic specialty rendering
+      function escH(s) {
+        return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
 
-            const pairs = [...tbody.querySelectorAll("tr.hospital-row")].map((row) => {
-              const detailId = row.getAttribute("data-detail-id");
-              return { row, detailRow: detailId ? document.getElementById(detailId) : null };
-            });
-            pairs.sort((a, b) => {
-              const av = parseSortValue(a.row, colIndex);
-              const bv = parseSortValue(b.row, colIndex);
-              if (av === bv) return hospitalName(a.row).localeCompare(hospitalName(b.row));
-              return (av - bv) * currentSortDir;
-            });
-            const frag = document.createDocumentFragment();
-            pairs.forEach(({ row, detailRow }) => {
-              frag.appendChild(row);
-              if (detailRow) frag.appendChild(detailRow);
-            });
-            tbody.appendChild(frag);
+      function waitCellHtml(w) {
+        if (!w) return '<span class="muted">N/A</span>';
+        return w.waitDays + ' day(s)<div class="small"><a href="' + escH(w.url) + '" target="_blank" rel="noopener">' + escH(w.name || "Consultant") + "</a></div>";
+      }
 
-            panel.querySelectorAll("th[data-sort-col] .sort-indicator").forEach((ind) => {
-              const col = Number.parseInt(ind.closest("th").getAttribute("data-sort-col"), 10);
-              ind.textContent = col === currentSortCol ? (currentSortDir === 1 ? "\u2191" : "\u2193") : "";
-            });
-          });
+      function avgCellHtml(total, count) {
+        if (!count) return '<span class="muted">N/A</span>';
+        return (total / count).toFixed(1) + ' <span class="muted">(' + total + "/" + count + ")</span>";
+      }
+
+      function apptCellHtml(c) {
+        if (c.appointmentsNext4Weeks == null) return '<span class="muted">N/A</span>';
+        if (c.appointmentsNext4Weeks <= 0) return '<span class="muted">none in next 4 weeks</span>';
+        return escH(String(c.appointmentsNext4Weeks));
+      }
+
+      function daysCellHtml(c) {
+        if (c.appointmentsNext4Weeks != null && c.appointmentsNext4Weeks <= 0) return '<span class="muted">none in next 4 weeks</span>';
+        if (c.firstAvailableDaysAway == null) return '<span class="muted">N/A</span>';
+        return escH(String(c.firstAvailableDaysAway));
+      }
+
+      function renderDynamicPanel(specialtyName) {
+        const existing = document.getElementById("tab-dynamic");
+        if (existing) existing.remove();
+        if (!specialtyName) return;
+
+        const rows = SPECIALTY_DATA[specialtyName] || [];
+        const tableRows = rows.map((row, idx) => {
+          const detailId = "dyn-detail-" + idx;
+          const consultantItems = (row.consultants || []).map((c) =>
+            "<tr><td><a href=\\"" + escH(c.url) + "\\" target=\\"_blank\\" rel=\\"noopener\\">" + escH(c.name || c.url) + "</a></td><td>" + apptCellHtml(c) + "</td><td>" + daysCellHtml(c) + "</td></tr>"
+          ).join("");
+          const consultantTable = "<table class=\\"detail-table\\"><thead><tr><th>" + escH(specialtyName) + " Consultant</th><th>Appointments (Next 4 Weeks)</th><th>First Available (Days)</th></tr></thead><tbody>" + consultantItems + "</tbody></table>";
+          return "<tr class=\\"hospital-row\\" data-detail-id=\\"" + detailId + "\\" data-sort-1=\\"" + (row.consultantCount || 0) + "\\" data-sort-2=\\"" + (row.bestWait ? row.bestWait.waitDays : 999999) + "\\" data-sort-3=\\"" + (row.totalAppointments || 0) + "\\" data-sort-4=\\"" + (row.consultantCount > 0 ? row.totalAppointments / row.consultantCount : -1) + "\\">" +
+            "<td><button type=\\"button\\" class=\\"hospital-btn\\" aria-expanded=\\"false\\" aria-controls=\\"" + detailId + "\\">" + escH(row.hospital) + "</button></td>" +
+            "<td>" + (row.consultantCount || 0) + "</td>" +
+            "<td>" + waitCellHtml(row.bestWait) + "</td>" +
+            "<td>" + (row.totalAppointments || 0) + "</td>" +
+            "<td>" + avgCellHtml(row.totalAppointments, row.consultantCount) + "</td>" +
+            "</tr><tr id=\\"" + detailId + "\\" class=\\"detail-row\\" hidden><td colspan=\\"5\\">" + consultantTable + "</td></tr>";
+        }).join("");
+
+        const panel = document.createElement("section");
+        panel.className = "panel tab-panel";
+        panel.id = "tab-dynamic";
+        panel.innerHTML = "<table><thead><tr>" +
+          "<th>Hospital</th>" +
+          "<th data-sort-col=\\"1\\"><button type=\\"button\\" class=\\"sort-btn\\">Total " + escH(specialtyName) + " Consultants<span class=\\"sort-indicator\\"></span></button></th>" +
+          "<th data-sort-col=\\"2\\"><button type=\\"button\\" class=\\"sort-btn\\">Shortest Wait<span class=\\"sort-indicator\\"></span></button></th>" +
+          "<th data-sort-col=\\"3\\"><button type=\\"button\\" class=\\"sort-btn\\">Total Appointments (4w)<span class=\\"sort-indicator\\"></span></button></th>" +
+          "<th data-sort-col=\\"4\\"><button type=\\"button\\" class=\\"sort-btn\\">Avg Appointments per Consultant (4w)<span class=\\"sort-indicator\\"></span></button></th>" +
+          "</tr></thead><tbody>" +
+          (tableRows || "<tr><td colspan=\\"5\\" class=\\"muted\\" style=\\"padding:16px\\">No data available.</td></tr>") +
+          "</tbody></table>";
+
+        const notesEl = document.querySelector(".note");
+        notesEl.parentNode.insertBefore(panel, notesEl);
+        initPanelSort(panel);
+      }
+
+      if (tabSelect) {
+        tabSelect.addEventListener("change", () => {
+          const val = tabSelect.value;
+          if (!val) return;
+          tabBtns.forEach((b) => b.classList.remove("active"));
+          hideAll();
+          renderDynamicPanel(val);
         });
-      });
+      }
     })();
   </script>
 </body>
