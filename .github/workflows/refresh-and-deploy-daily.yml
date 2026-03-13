@@ -37,7 +37,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add consultant-review/index.html consultant-review/orthopaedics-waits.html consultant-review/data.json consultant-review/booking-report.csv
+          git add consultant-review/index.html consultant-review/waits.html consultant-review/data.json consultant-review/booking-report.csv
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else

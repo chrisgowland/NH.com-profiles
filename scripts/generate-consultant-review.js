@@ -1874,7 +1874,7 @@ async function main() {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUTPUT_DIR, "data.json"), JSON.stringify(payload, null, 2), "utf8");
   fs.writeFileSync(path.join(OUTPUT_DIR, "index.html"), renderHtml(payload), "utf8");
-  fs.writeFileSync(path.join(OUTPUT_DIR, "orthopaedics-waits.html"), renderSpecialtyWaitsHtml(payload), "utf8");
+  fs.writeFileSync(path.join(OUTPUT_DIR, "waits.html"), renderSpecialtyWaitsHtml(payload), "utf8");
   const bookingCsvHeader = [
     "name",
     "url",
@@ -1907,7 +1907,7 @@ async function main() {
 
   console.log("Done.");
   console.log(`Website: ${path.join(OUTPUT_DIR, "index.html")}`);
-  console.log(`Specialty waits: ${path.join(OUTPUT_DIR, "orthopaedics-waits.html")}`);
+  console.log(`Specialty waits: ${path.join(OUTPUT_DIR, "waits.html")}`);
   console.log(`Data: ${path.join(OUTPUT_DIR, "data.json")}`);
   console.log(`Included: ${summary.totalIncluded} | Excluded: ${summary.totalExcluded}`);
 }
