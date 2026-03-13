@@ -790,20 +790,20 @@ function renderHtml(payload) {
     </section>
 
     <section class="cards">
-      <article class="card"><div class="label">Profiles Reviewed</div><div class="value">${payload.summary.totalIncluded}</div></article>
-      <article class="card"><div class="label">Profiles Excluded</div><div class="value">${payload.summary.totalExcluded}</div></article>
-      <article class="card"><div class="label">Overall Pass Rate</div><div class="value">${payload.summary.overallPassRate}</div></article>
-      <article class="card"><div class="label">Photo Quality Pass</div><div class="value">${payload.summary.criteriaRates.photoPass}</div></article>
-      <article class="card"><div class="label">Clinical Terms Pass</div><div class="value">${payload.summary.criteriaRates.clinicalTermsPass}</div></article>
-      <article class="card"><div class="label">Specialty Pass</div><div class="value">${payload.summary.criteriaRates.specialtyPass}</div></article>
-      <article class="card"><div class="label">Procedures Pass</div><div class="value">${payload.summary.criteriaRates.proceduresPass}</div></article>
-      <article class="card"><div class="label">Insurers Pass</div><div class="value">${payload.summary.criteriaRates.insurersPass}</div></article>
-      <article class="card"><div class="label">Qualifications Pass</div><div class="value">${payload.summary.criteriaRates.qualificationsPass}</div></article>
-      <article class="card"><div class="label">GMC Number Pass</div><div class="value">${payload.summary.criteriaRates.gmcPass}</div></article>
-      <article class="card"><div class="label">Book Online Pass</div><div class="value">${payload.summary.criteriaRates.bookOnlinePass}</div></article>
-      <article class="card"><div class="label">Avg Plain English Score</div><div class="value">${payload.summary.avgPlainEnglishScore}/5</div></article>
-      <article class="card"><div class="label">No Appointments in Next 5 Days</div><div class="value">${payload.summary.bookingRates.noAppointmentsNext5DaysRate}</div></article>
-      <article class="card"><div class="label">Less Than 12 Appointments (4 Weeks)</div><div class="value">${payload.summary.bookingRates.lessThan12In4WeeksRate}</div></article>
+      <article class="card"><div class="label" id="metricProfilesLabel">Profiles Reviewed</div><div class="value" id="metric-totalIncluded">${payload.summary.totalIncluded}</div></article>
+      <article class="card"><div class="label">Profiles Excluded</div><div class="value" id="metric-totalExcluded">${payload.summary.totalExcluded}</div></article>
+      <article class="card"><div class="label">Overall Pass Rate</div><div class="value" id="metric-overallPassRate">${payload.summary.overallPassRate}</div></article>
+      <article class="card"><div class="label">Photo Quality Pass</div><div class="value" id="metric-photoPass">${payload.summary.criteriaRates.photoPass}</div></article>
+      <article class="card"><div class="label">Clinical Terms Pass</div><div class="value" id="metric-clinicalTermsPass">${payload.summary.criteriaRates.clinicalTermsPass}</div></article>
+      <article class="card"><div class="label">Specialty Pass</div><div class="value" id="metric-specialtyPass">${payload.summary.criteriaRates.specialtyPass}</div></article>
+      <article class="card"><div class="label">Procedures Pass</div><div class="value" id="metric-proceduresPass">${payload.summary.criteriaRates.proceduresPass}</div></article>
+      <article class="card"><div class="label">Insurers Pass</div><div class="value" id="metric-insurersPass">${payload.summary.criteriaRates.insurersPass}</div></article>
+      <article class="card"><div class="label">Qualifications Pass</div><div class="value" id="metric-qualificationsPass">${payload.summary.criteriaRates.qualificationsPass}</div></article>
+      <article class="card"><div class="label">GMC Number Pass</div><div class="value" id="metric-gmcPass">${payload.summary.criteriaRates.gmcPass}</div></article>
+      <article class="card"><div class="label">Book Online Pass</div><div class="value" id="metric-bookOnlinePass">${payload.summary.criteriaRates.bookOnlinePass}</div></article>
+      <article class="card"><div class="label">Avg Plain English Score</div><div class="value" id="metric-avgPlainEnglishScore">${payload.summary.avgPlainEnglishScore}/5</div></article>
+      <article class="card"><div class="label">No Appointments in Next 5 Days</div><div class="value" id="metric-noAppointmentsNext5DaysRate">${payload.summary.bookingRates.noAppointmentsNext5DaysRate}</div></article>
+      <article class="card"><div class="label">Less Than 12 Appointments (4 Weeks)</div><div class="value" id="metric-lessThan12In4WeeksRate">${payload.summary.bookingRates.lessThan12In4WeeksRate}</div></article>
     </section>
 
     <section class="filters">
@@ -879,6 +879,23 @@ function renderHtml(payload) {
     const lt12Filter = document.getElementById("lt12Filter");
     const highRiskPreset = document.getElementById("highRiskPreset");
     const clearPreset = document.getElementById("clearPreset");
+    const profilesLabelEl = document.getElementById("metricProfilesLabel");
+    const totalExcludedEl = document.getElementById("metric-totalExcluded");
+    const summaryMetricEls = {
+      totalIncluded: document.getElementById("metric-totalIncluded"),
+      overallPassRate: document.getElementById("metric-overallPassRate"),
+      photoPass: document.getElementById("metric-photoPass"),
+      clinicalTermsPass: document.getElementById("metric-clinicalTermsPass"),
+      specialtyPass: document.getElementById("metric-specialtyPass"),
+      proceduresPass: document.getElementById("metric-proceduresPass"),
+      insurersPass: document.getElementById("metric-insurersPass"),
+      qualificationsPass: document.getElementById("metric-qualificationsPass"),
+      gmcPass: document.getElementById("metric-gmcPass"),
+      bookOnlinePass: document.getElementById("metric-bookOnlinePass"),
+      avgPlainEnglishScore: document.getElementById("metric-avgPlainEnglishScore"),
+      noAppointmentsNext5DaysRate: document.getElementById("metric-noAppointmentsNext5DaysRate"),
+      lessThan12In4WeeksRate: document.getElementById("metric-lessThan12In4WeeksRate"),
+    };
 
     function badge(pass) {
       return pass
@@ -903,6 +920,74 @@ function renderHtml(payload) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
+    }
+
+    function pct(part, total) {
+      if (!total) return "0.0%";
+      return ((part / total) * 100).toFixed(1) + "%";
+    }
+
+    function calculateSummary(records) {
+      const total = records.length;
+      const overallPassCount = records.filter((r) => r.overallPass).length;
+      const photoPass = records.filter((r) => r.criteria.photoPass).length;
+      const clinicalTermsPass = records.filter((r) => r.criteria.clinicalTermsPass).length;
+      const specialtyPass = records.filter((r) => r.criteria.specialtyPass).length;
+      const proceduresPass = records.filter((r) => r.criteria.proceduresPass).length;
+      const insurersPass = records.filter((r) => r.criteria.insurersPass).length;
+      const qualificationsPass = records.filter((r) => r.criteria.qualificationsPass).length;
+      const gmcPass = records.filter((r) => r.criteria.gmcPass).length;
+      const bookOnlinePass = records.filter((r) => r.criteria.bookOnlinePass).length;
+      const noAppointmentsNext5DaysCount = records.filter((r) => {
+        if (!r.booking || r.booking.firstAvailableDaysAway == null) return true;
+        return r.booking.firstAvailableDaysAway > 5;
+      }).length;
+      const lessThan12In4WeeksCount = records.filter((r) => {
+        if (!r.booking || r.booking.appointmentsNext4Weeks == null) return true;
+        return r.booking.appointmentsNext4Weeks < 12;
+      }).length;
+      const avgPlainEnglishScore = total === 0
+        ? 0
+        : records.reduce((sum, r) => sum + r.criteria.plainEnglishScore, 0) / total;
+
+      return {
+        totalIncluded: total,
+        overallPassRate: pct(overallPassCount, total),
+        photoPass: pct(photoPass, total),
+        clinicalTermsPass: pct(clinicalTermsPass, total),
+        specialtyPass: pct(specialtyPass, total),
+        proceduresPass: pct(proceduresPass, total),
+        insurersPass: pct(insurersPass, total),
+        qualificationsPass: pct(qualificationsPass, total),
+        gmcPass: pct(gmcPass, total),
+        bookOnlinePass: pct(bookOnlinePass, total),
+        avgPlainEnglishScore: avgPlainEnglishScore.toFixed(2) + "/5",
+        noAppointmentsNext5DaysRate: pct(noAppointmentsNext5DaysCount, total),
+        lessThan12In4WeeksRate: pct(lessThan12In4WeeksCount, total),
+      };
+    }
+
+    function updateSummaryCards(records) {
+      const hasFilters =
+        !!searchInput.value.trim() ||
+        !!specialtyFilter.value ||
+        !!hospitalFilter.value ||
+        !!overallFilter.value ||
+        !!next5DaysFilter.value ||
+        !!lt12Filter.value;
+      const summary = calculateSummary(records);
+
+      if (profilesLabelEl) {
+        profilesLabelEl.textContent = hasFilters ? "Profiles Matching Filters" : "Profiles Reviewed";
+      }
+      if (totalExcludedEl) {
+        totalExcludedEl.textContent = String(REVIEW_DATA.summary.totalExcluded);
+      }
+
+      Object.entries(summaryMetricEls).forEach(([key, el]) => {
+        if (!el) return;
+        el.textContent = key === "totalIncluded" ? String(summary[key]) : summary[key];
+      });
     }
 
     function renderTable(records) {
@@ -987,6 +1072,7 @@ function renderHtml(payload) {
       });
 
       renderTable(filtered);
+      updateSummaryCards(filtered);
     }
 
     searchInput.addEventListener("input", applyFilters);
@@ -1007,6 +1093,7 @@ function renderHtml(payload) {
     });
 
     renderTable(REVIEW_DATA.records);
+    updateSummaryCards(REVIEW_DATA.records);
   </script>
 </body>
 </html>`;
