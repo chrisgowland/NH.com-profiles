@@ -1128,6 +1128,26 @@ function consultantIsGeneralSurgery(record) {
   return record.specialties.some((s) => /\bgeneral surgery\b/i.test(String(s || "")));
 }
 
+function consultantIsENT(record) {
+  if (!record || !Array.isArray(record.specialties)) return false;
+  return record.specialties.some((s) => /\bent\b|ear.{0,5}nose.{0,5}throat|otolaryngol/i.test(String(s || "")));
+}
+
+function consultantIsOphthalmology(record) {
+  if (!record || !Array.isArray(record.specialties)) return false;
+  return record.specialties.some((s) => /\bophthalm/i.test(String(s || "")));
+}
+
+function consultantIsCardiology(record) {
+  if (!record || !Array.isArray(record.specialties)) return false;
+  return record.specialties.some((s) => /\bcardiolog/i.test(String(s || "")));
+}
+
+function consultantIsGynaecology(record) {
+  if (!record || !Array.isArray(record.specialties)) return false;
+  return record.specialties.some((s) => /\bgyn(a)?ecology\b/i.test(String(s || "")));
+}
+
 function getBookingForHospital(record, hospitalName) {
   if (!record || !record.booking) return null;
   if (
@@ -1551,6 +1571,22 @@ function renderSpecialtyWaitsHtml(payload) {
     buildGenericSpecialtyRows(records, consultantIsGeneralSurgery),
     "general-surgery", "General Surgery"
   );
+  const entPanel = renderGenericSpecialtyPanel(
+    buildGenericSpecialtyRows(records, consultantIsENT),
+    "ent", "ENT"
+  );
+  const ophthalmologyPanel = renderGenericSpecialtyPanel(
+    buildGenericSpecialtyRows(records, consultantIsOphthalmology),
+    "ophthalmology", "Ophthalmology"
+  );
+  const cardiologyPanel = renderGenericSpecialtyPanel(
+    buildGenericSpecialtyRows(records, consultantIsCardiology),
+    "cardiology", "Cardiology"
+  );
+  const gynaecologyPanel = renderGenericSpecialtyPanel(
+    buildGenericSpecialtyRows(records, consultantIsGynaecology),
+    "gynaecology", "Gynaecology"
+  );
 
   return `<!doctype html>
 <html lang="en">
@@ -1678,6 +1714,10 @@ function renderSpecialtyWaitsHtml(payload) {
         <button type="button" class="tab-btn" data-tab="oncology">Oncology</button>
         <button type="button" class="tab-btn" data-tab="urology">Urology</button>
         <button type="button" class="tab-btn" data-tab="general-surgery">General Surgery</button>
+        <button type="button" class="tab-btn" data-tab="ent">ENT</button>
+        <button type="button" class="tab-btn" data-tab="ophthalmology">Ophthalmology</button>
+        <button type="button" class="tab-btn" data-tab="cardiology">Cardiology</button>
+        <button type="button" class="tab-btn" data-tab="gynaecology">Gynaecology</button>
       </div>
     </section>
 
@@ -1705,6 +1745,10 @@ function renderSpecialtyWaitsHtml(payload) {
     ${oncologyPanel}
     ${urologyPanel}
     ${generalSurgeryPanel}
+    ${entPanel}
+    ${ophthalmologyPanel}
+    ${cardiologyPanel}
+    ${gynaecologyPanel}
 
     <p class="note">Click a site name to view consultants and their appointments in the next 4 weeks.</p>
     <p class="note">Wait values use each consultant&apos;s first online-bookable appointment in days.</p>
