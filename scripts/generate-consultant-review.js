@@ -1519,6 +1519,18 @@ function renderGenericSpecialtyPanel(rows, tabId, specialtyLabel) {
 }
 
 function buildHospitalLeagueRows(records) {
+  // First pass: count ALL consultants per hospital
+  const allConsultantsMap = new Map();
+  for (const r of records) {
+    if (!r.url) continue;
+    for (const h of r.hospitals || []) {
+      const hospital = h && String(h).trim();
+      if (!hospital || ORTHO_WAITS_EXCLUDED_HOSPITALS.has(hospital)) continue;
+      if (!allConsultantsMap.has(hospital)) allConsultantsMap.set(hospital, new Set());
+      allConsultantsMap.get(hospital).add(r.url);
+    }
+  }
+
   const hospitalMap = new Map();
 
   for (const r of records) {
@@ -1528,10 +1540,10 @@ function buildHospitalLeagueRows(records) {
       if (!hospital || ORTHO_WAITS_EXCLUDED_HOSPITALS.has(hospital)) continue;
 
       if (!hospitalMap.has(hospital)) {
-        hospitalMap.set(hospital, { consultantUrls: new Set(), specialtyMap: new Map(), waitSum: 0, waitCount: 0, totalAppointments: 0 });
+        hospitalMap.set(hospital, { onlineConsultantUrls: new Set(), specialtyMap: new Map(), waitSum: 0, waitCount: 0, totalAppointments: 0 });
       }
       const entry = hospitalMap.get(hospital);
-      if (r.url) entry.consultantUrls.add(r.url);
+      if (r.url) entry.onlineConsultantUrls.add(r.url);
 
       const booking = getBookingForHospital(r, hospital);
       const n = booking ? Number(booking.appointmentsNext4Weeks) : null;
@@ -1572,7 +1584,8 @@ function buildHospitalLeagueRows(records) {
       .sort((a, b) => b.totalAppointments - a.totalAppointments);
     rows.push({
       hospital,
-      consultantCount: entry.consultantUrls.size,
+      consultantCount: (allConsultantsMap.get(hospital) || new Set()).size,
+      onlineConsultantCount: entry.onlineConsultantUrls.size,
       totalAppointments: entry.totalAppointments,
       avgFirstAvailable,
       specialtyCount: specialties.length,
@@ -1641,17 +1654,19 @@ function renderSpecialtyWaitsHtml(payload) {
     return `<tr class="hospital-row"
         data-detail-id="${detailId}"
         data-sort-1="${escHtml(String(row.consultantCount))}"
-        data-sort-2="${escHtml(String(row.avgFirstAvailable != null ? row.avgFirstAvailable : 999999))}"
-        data-sort-3="${escHtml(String(row.totalAppointments))}"
-        data-sort-4="${escHtml(String(row.specialtyCount))}">
+        data-sort-2="${escHtml(String(row.onlineConsultantCount))}"
+        data-sort-3="${escHtml(String(row.avgFirstAvailable != null ? row.avgFirstAvailable : 999999))}"
+        data-sort-4="${escHtml(String(row.totalAppointments))}"
+        data-sort-5="${escHtml(String(row.specialtyCount))}">
         <td><button type="button" class="hospital-btn" aria-expanded="false" aria-controls="${detailId}">${escHtml(row.hospital)}</button></td>
         <td>${escHtml(String(row.consultantCount))}</td>
+        <td>${escHtml(String(row.onlineConsultantCount))}</td>
         <td>${avgDisplay}</td>
         <td>${escHtml(String(row.totalAppointments))}</td>
         <td>${escHtml(String(row.specialtyCount))}</td>
       </tr>
       <tr id="${detailId}" class="detail-row" hidden>
-        <td colspan="5">${detailContent}</td>
+        <td colspan="6">${detailContent}</td>
       </tr>`;
   }).join("");
 
@@ -1885,9 +1900,10 @@ function renderSpecialtyWaitsHtml(payload) {
           <tr>
             <th>Hospital</th>
             <th data-sort-col="1"><button type="button" class="sort-btn">Total Consultants<span class="sort-indicator"></span></button></th>
-            <th data-sort-col="2"><button type="button" class="sort-btn">Avg First Available (Days)<span class="sort-indicator"></span></button></th>
-            <th data-sort-col="3"><button type="button" class="sort-btn">Total Online Appointments (4w)<span class="sort-indicator"></span></button></th>
-            <th data-sort-col="4"><button type="button" class="sort-btn">Specialties Offered<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="2"><button type="button" class="sort-btn">Consultants Online<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="3"><button type="button" class="sort-btn">Avg First Available (Days)<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="4"><button type="button" class="sort-btn">Total Online Appointments (4w)<span class="sort-indicator"></span></button></th>
+            <th data-sort-col="5"><button type="button" class="sort-btn">Specialties Offered<span class="sort-indicator"></span></button></th>
           </tr>
         </thead>
         <tbody>
