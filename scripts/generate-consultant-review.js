@@ -1384,7 +1384,7 @@ function consultantListHtml(row) {
   return `<table class="detail-table">
     <thead>
       <tr>
-        <th>Orthopaedic Consultant</th>
+        <th>Orthopaedic Consultant (Online Bookable)</th>
         <th>Appointments (Next 4 Weeks)</th>
         <th>First Available (Days)</th>
       </tr>
@@ -1463,7 +1463,7 @@ function genericConsultantListHtml(row, specialtyLabel) {
   return `<table class="detail-table">
   <thead>
     <tr>
-      <th>${escHtml(specialtyLabel)} Consultant</th>
+      <th>${escHtml(specialtyLabel)} Consultant (Online Bookable)</th>
       <th>Appointments (Next 4 Weeks)</th>
       <th>First Available (Days)</th>
     </tr>
@@ -1645,7 +1645,7 @@ function renderSpecialtyWaitsHtml(payload) {
       </tr>`
     ).join("");
     const detailContent = `<table class="detail-table">
-  <thead><tr><th>Specialty</th><th>Consultants</th><th>Shortest Wait</th><th>Total Appts (4w)</th></tr></thead>
+  <thead><tr><th>Specialty</th><th>Online Consultants</th><th>Shortest Wait</th><th>Total Appts (4w)</th></tr></thead>
   <tbody>${specialtyBreakdown}</tbody>
 </table>`;
     const avgDisplay = row.avgFirstAvailable != null
