@@ -165,7 +165,7 @@ async function main() {
     `<li>Profiles reviewed: <strong>${summary.totalIncluded ?? "N/A"}</strong></li>`,
     `<li>Overall pass rate: <strong>${summary.overallPassRate ?? "N/A"}</strong></li>`,
     `<li>Overall fail rate: <strong>${failRate}</strong></li>`,
-    `<li>No appointments in next 5 days: <strong>${summary.bookingRates?.noAppointmentsNext5DaysRate ?? "N/A"}</strong></li>`,
+    `<li>No appointments in next 7 days: <strong>${summary.bookingRates?.noAppointmentsNext7DaysRate ?? "N/A"}</strong></li>`,
     `<li>Less than 12 appointments (4 weeks): <strong>${summary.bookingRates?.lessThan12In4WeeksRate ?? "N/A"}</strong></li>`,
     `<li>Generated at (UK): <strong>${generatedAtUk}</strong></li>`,
     "</ul>",

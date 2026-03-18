@@ -540,9 +540,9 @@ async function evaluateConsultant(urlPath, html, swiftype, bookingContext) {
 function createSummary(records, excludedCount) {
   const total = records.length;
   const passedOverall = records.filter((r) => r.overallPass).length;
-  const noAppointmentsNext5Days = records.filter((r) => {
+  const noAppointmentsNext7Days = records.filter((r) => {
     if (!r.booking || r.booking.firstAvailableDaysAway == null) return true;
-    return r.booking.firstAvailableDaysAway > 5;
+    return r.booking.firstAvailableDaysAway > 7;
   }).length;
   const lessThan12In4Weeks = records.filter((r) => {
     if (!r.booking || r.booking.appointmentsNext4Weeks == null) return true;
@@ -581,8 +581,8 @@ function createSummary(records, excludedCount) {
       bookOnlinePass: pct(c.bookOnlinePass, total),
     },
     bookingRates: {
-      noAppointmentsNext5DaysCount: noAppointmentsNext5Days,
-      noAppointmentsNext5DaysRate: pct(noAppointmentsNext5Days, total),
+      noAppointmentsNext7DaysCount: noAppointmentsNext7Days,
+      noAppointmentsNext7DaysRate: pct(noAppointmentsNext7Days, total),
       lessThan12In4WeeksCount: lessThan12In4Weeks,
       lessThan12In4WeeksRate: pct(lessThan12In4Weeks, total),
     },
@@ -802,7 +802,7 @@ function renderHtml(payload) {
       <article class="card"><div class="label">GMC Number Pass</div><div class="value" id="metric-gmcPass">${payload.summary.criteriaRates.gmcPass}</div></article>
       <article class="card"><div class="label">Book Online Pass</div><div class="value" id="metric-bookOnlinePass">${payload.summary.criteriaRates.bookOnlinePass}</div></article>
       <article class="card"><div class="label">Avg Plain English Score</div><div class="value" id="metric-avgPlainEnglishScore">${payload.summary.avgPlainEnglishScore}/5</div></article>
-      <article class="card"><div class="label">No Appointments in Next 5 Days</div><div class="value" id="metric-noAppointmentsNext5DaysRate">${payload.summary.bookingRates.noAppointmentsNext5DaysRate}</div></article>
+      <article class="card"><div class="label">No Appointments in Next 7 Days</div><div class="value" id="metric-noAppointmentsNext7DaysRate">${payload.summary.bookingRates.noAppointmentsNext7DaysRate}</div></article>
       <article class="card"><div class="label">Less Than 12 Appointments (4 Weeks)</div><div class="value" id="metric-lessThan12In4WeeksRate">${payload.summary.bookingRates.lessThan12In4WeeksRate}</div></article>
     </section>
 
@@ -815,8 +815,8 @@ function renderHtml(payload) {
         <option value="pass">Overall pass</option>
         <option value="fail">Overall fail</option>
       </select>
-      <select id="next5DaysFilter">
-        <option value="">No appts next 5 days: All</option>
+      <select id="next7DaysFilter">
+        <option value="">No appts next 7 days: All</option>
         <option value="yes">Yes</option>
         <option value="no">No</option>
       </select>
@@ -875,7 +875,7 @@ function renderHtml(payload) {
     const specialtyFilter = document.getElementById("specialtyFilter");
     const hospitalFilter = document.getElementById("hospitalFilter");
     const overallFilter = document.getElementById("overallFilter");
-    const next5DaysFilter = document.getElementById("next5DaysFilter");
+    const next7DaysFilter = document.getElementById("next7DaysFilter");
     const lt12Filter = document.getElementById("lt12Filter");
     const highRiskPreset = document.getElementById("highRiskPreset");
     const clearPreset = document.getElementById("clearPreset");
@@ -893,7 +893,7 @@ function renderHtml(payload) {
       gmcPass: document.getElementById("metric-gmcPass"),
       bookOnlinePass: document.getElementById("metric-bookOnlinePass"),
       avgPlainEnglishScore: document.getElementById("metric-avgPlainEnglishScore"),
-      noAppointmentsNext5DaysRate: document.getElementById("metric-noAppointmentsNext5DaysRate"),
+      noAppointmentsNext7DaysRate: document.getElementById("metric-noAppointmentsNext7DaysRate"),
       lessThan12In4WeeksRate: document.getElementById("metric-lessThan12In4WeeksRate"),
     };
 
@@ -938,9 +938,9 @@ function renderHtml(payload) {
       const qualificationsPass = records.filter((r) => r.criteria.qualificationsPass).length;
       const gmcPass = records.filter((r) => r.criteria.gmcPass).length;
       const bookOnlinePass = records.filter((r) => r.criteria.bookOnlinePass).length;
-      const noAppointmentsNext5DaysCount = records.filter((r) => {
+      const noAppointmentsNext7DaysCount = records.filter((r) => {
         if (!r.booking || r.booking.firstAvailableDaysAway == null) return true;
-        return r.booking.firstAvailableDaysAway > 5;
+        return r.booking.firstAvailableDaysAway > 7;
       }).length;
       const lessThan12In4WeeksCount = records.filter((r) => {
         if (!r.booking || r.booking.appointmentsNext4Weeks == null) return true;
@@ -962,7 +962,7 @@ function renderHtml(payload) {
         gmcPass: pct(gmcPass, total),
         bookOnlinePass: pct(bookOnlinePass, total),
         avgPlainEnglishScore: avgPlainEnglishScore.toFixed(2) + "/5",
-        noAppointmentsNext5DaysRate: pct(noAppointmentsNext5DaysCount, total),
+        noAppointmentsNext7DaysRate: pct(noAppointmentsNext7DaysCount, total),
         lessThan12In4WeeksRate: pct(lessThan12In4WeeksCount, total),
       };
     }
@@ -973,7 +973,7 @@ function renderHtml(payload) {
         !!specialtyFilter.value ||
         !!hospitalFilter.value ||
         !!overallFilter.value ||
-        !!next5DaysFilter.value ||
+        !!next7DaysFilter.value ||
         !!lt12Filter.value;
       const summary = calculateSummary(records);
 
@@ -1050,13 +1050,13 @@ function renderHtml(payload) {
       const specialty = specialtyFilter.value;
       const hospital = hospitalFilter.value;
       const overall = overallFilter.value;
-      const no5 = next5DaysFilter.value;
+      const no7 = next7DaysFilter.value;
       const lt12 = lt12Filter.value;
 
       const filtered = REVIEW_DATA.records.filter((r) => {
         const hay = [r.name, r.url, ...r.specialties, ...r.hospitals].join(" ").toLowerCase();
-        const noAppointments5 =
-          !r.booking || r.booking.firstAvailableDaysAway == null || r.booking.firstAvailableDaysAway > 5;
+        const noAppointments7 =
+          !r.booking || r.booking.firstAvailableDaysAway == null || r.booking.firstAvailableDaysAway > 7;
         const lessThan12 =
           !r.booking || r.booking.appointmentsNext4Weeks == null || r.booking.appointmentsNext4Weeks < 12;
         if (q && !hay.includes(q)) return false;
@@ -1064,8 +1064,8 @@ function renderHtml(payload) {
         if (hospital && !r.hospitals.includes(hospital)) return false;
         if (overall === "pass" && !r.overallPass) return false;
         if (overall === "fail" && r.overallPass) return false;
-        if (no5 === "yes" && !noAppointments5) return false;
-        if (no5 === "no" && noAppointments5) return false;
+        if (no7 === "yes" && !noAppointments7) return false;
+        if (no7 === "no" && noAppointments7) return false;
         if (lt12 === "yes" && !lessThan12) return false;
         if (lt12 === "no" && lessThan12) return false;
         return true;
@@ -1079,15 +1079,15 @@ function renderHtml(payload) {
     specialtyFilter.addEventListener("change", applyFilters);
     hospitalFilter.addEventListener("change", applyFilters);
     overallFilter.addEventListener("change", applyFilters);
-    next5DaysFilter.addEventListener("change", applyFilters);
+    next7DaysFilter.addEventListener("change", applyFilters);
     lt12Filter.addEventListener("change", applyFilters);
     highRiskPreset.addEventListener("click", () => {
-      next5DaysFilter.value = "yes";
+      next7DaysFilter.value = "yes";
       lt12Filter.value = "yes";
       applyFilters();
     });
     clearPreset.addEventListener("click", () => {
-      next5DaysFilter.value = "";
+      next7DaysFilter.value = "";
       lt12Filter.value = "";
       applyFilters();
     });
